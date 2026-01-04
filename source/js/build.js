@@ -6,10 +6,14 @@ const glob = require("glob-promise");
 const THEME_ROOT = path.join(__dirname, "../..");
 const SOURCE_DIR = path.join(THEME_ROOT, "source/js");
 const BUILD_DIR = path.join(THEME_ROOT, "source/js/build");
+
+// Convert Windows paths to forward slashes for glob patterns
+const toGlobPath = (p) => p.split(path.sep).join('/');
+
 const IGNORE_PATTERNS = [
-  path.join(SOURCE_DIR, "libs/**"),
-  path.join(BUILD_DIR, "**"),
-  path.join(SOURCE_DIR, "build.js"),
+  toGlobPath(path.join(SOURCE_DIR, "libs/**")),
+  toGlobPath(path.join(BUILD_DIR, "**")),
+  toGlobPath(path.join(SOURCE_DIR, "build.js")),
 ];
 
 const minifyOptions = {
@@ -97,10 +101,10 @@ async function minifyJS() {
     await ensureDirectoryExists(BUILD_DIR);
 
     // Get lib files to copy
-    const libFiles = await glob(`${SOURCE_DIR}/libs/**/*.js`);
+    const libFiles = await glob(toGlobPath(`${SOURCE_DIR}/libs/**/*.js`));
     
     // Get JS files to minify (excluding libs and other ignored patterns)
-    const files = await glob(`${SOURCE_DIR}/**/*.js`, {
+    const files = await glob(toGlobPath(`${SOURCE_DIR}/**/*.js`), {
       ignore: IGNORE_PATTERNS,
     });
 
