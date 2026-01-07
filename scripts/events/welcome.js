@@ -12,7 +12,7 @@ hexo.on("ready", async () => {
     return new Promise((resolve, reject) => {
       https
         .get(
-          `https://redefine-version.ohevan.com/api/v2/info`,
+          `https://redefine-x-version.jason-yang.top/api/v2/info`,
           { timeout: timeout },
           (response) => {
             if (response.statusCode < 200 || response.statusCode > 299) {
@@ -36,12 +36,10 @@ hexo.on("ready", async () => {
                   return reject(
                     new Error(`Failed to fetch data: ${jsonData.message}`),
                   );
-                }
-
-                const redefineData = jsonData.data;
-
-                logInfo(redefineData);
-                checkVersionAndCDNAvailability(redefineData);
+                }                
+                
+                logInfo(jsonData);
+                checkVersionAndCDNAvailability(jsonData);
                 resolve();
               } catch (error) {
                 logFailedInfo();
@@ -60,26 +58,29 @@ hexo.on("ready", async () => {
     await fetchRedefineInfo();
   } catch (error) {
     hexo.log.warn(`Check latest version failed: ${error}`);
+    hexo.locals.set(`cdnTestStatus_jsdelivr`, 404);
+    hexo.locals.set(`cdnTestStatus_unpkg`, 404);
     hexo.locals.set(`cdnTestStatus_cdnjs`, 404);
     hexo.locals.set(`cdnTestStatus_zstatic`, 404);
-    hexo.locals.set(`cdnTestStatus_npmMirror`, 404);
+    hexo.locals.set(`cdnTestStatus_npmmirror`, 404);
   }
 });
 
 function logInfo(data) {
   hexo.log.info(
     `
-      +======================================================================================+
-      |                                                                                      |
-      |    _____ _   _ _____ __  __ _____   ____  _____ ____  _____ _____ ___ _   _ _____    |
-      |   |_   _| | | | ____|  \\/  | ____| |  _ \\| ____|  _ \\| ____|  ___|_ _| \\ | | ____|   |
-      |     | | | |_| |  _| | |\\/| |  _|   | |_) |  _| | | | |  _| | |_   | ||  \\| |  _|     |
-      |     | | |  _  | |___| |  | | |___  |  _ <| |___| |_| | |___|  _|  | || |\\  | |___    |
-      |     |_| |_| |_|_____|_|  |_|_____| |_| \\_\\_____|____/|_____|_|   |___|_| \\_|_____|   |
-      |                                                                                      |
-      |                            current v${version}  latest v${data.npmVersion}                             |
-      |                  https://github.com/EvanNotFound/hexo-theme-redefine                 |
-      +======================================================================================+
+      +=====================================================================================+
+      |                                                                                     |
+      |      ██████╗ ███████╗██████╗ ███████╗███████╗██╗███╗   ██╗███████╗   ██╗  ██╗       |
+      |      ██╔══██╗██╔════╝██╔══██╗██╔════╝██╔════╝██║████╗  ██║██╔════╝   ╚██╗██╔╝       |
+      |      ██████╔╝█████╗  ██║  ██║█████╗  █████╗  ██║██╔██╗ ██║█████╗█████╗╚███╔╝        |
+      |      ██╔══██╗██╔══╝  ██║  ██║██╔══╝  ██╔══╝  ██║██║╚██╗██║██╔══╝╚════╝██╔██╗        |
+      |      ██║  ██║███████╗██████╔╝███████╗██║     ██║██║ ╚████║███████╗   ██╔╝ ██╗       |
+      |      ╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝  ╚═╝       |
+      |                                                                                     |
+      |                             current v${version}  latest v${data.npmVersion}                           |
+      |                 https://github.com/Jason-JP-Yang/hexo-theme-Redefine-X              |
+      +=====================================================================================+
                       `,
   );
 }
@@ -87,17 +88,18 @@ function logInfo(data) {
 function logFailedInfo() {
   hexo.log.info(
     `
-      +======================================================================================+
-      |                                                                                      |
-      |    _____ _   _ _____ __  __ _____   ____  _____ ____  _____ _____ ___ _   _ _____    |
-      |   |_   _| | | | ____|  \\/  | ____| |  _ \\| ____|  _ \\| ____|  ___|_ _| \\ | | ____|   |
-      |     | | | |_| |  _| | |\\/| |  _|   | |_) |  _| | | | |  _| | |_   | ||  \\| |  _|     |
-      |     | | |  _  | |___| |  | | |___  |  _ <| |___| |_| | |___|  _|  | || |\\  | |___    |
-      |     |_| |_| |_|_____|_|  |_|_____| |_| \\_\\_____|____/|_____|_|   |___|_| \\_|_____|   |
-      |                                                                                      |
-      |                        current v${version}  fetch latest failed                           |
-      |                  https://github.com/EvanNotFound/hexo-theme-redefine                 |
-      +======================================================================================+
+      +=====================================================================================+
+      |                                                                                     |
+      |      ██████╗ ███████╗██████╗ ███████╗███████╗██╗███╗   ██╗███████╗   ██╗  ██╗       |
+      |      ██╔══██╗██╔════╝██╔══██╗██╔════╝██╔════╝██║████╗  ██║██╔════╝   ╚██╗██╔╝       |
+      |      ██████╔╝█████╗  ██║  ██║█████╗  █████╗  ██║██╔██╗ ██║█████╗█████╗╚███╔╝        |
+      |      ██╔══██╗██╔══╝  ██║  ██║██╔══╝  ██╔══╝  ██║██║╚██╗██║██╔══╝╚════╝██╔██╗        |
+      |      ██║  ██║███████╗██████╔╝███████╗██║     ██║██║ ╚████║███████╗   ██╔╝ ██╗       |
+      |      ╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝  ╚═╝       |
+      |                                                                                     |
+      |                          current v${version}  fetch latest failed                        |
+      |                   https://github.com/Jason-JP-Yang/hexo-theme-Redefine-X            |
+      +=====================================================================================+
        `,
   );
 }
@@ -106,21 +108,41 @@ function checkVersionAndCDNAvailability(data) {
   if (data.npmVersion > version) {
     hexo.log.warn(
       `\x1b[33m%s\x1b[0m`,
-      `Redefine v${version} is outdated, please update to v${data.npmVersion}!`,
+      `Redefine-X v${version} is outdated, please update to v${data.npmVersion}!`,
     );
   }
 
-  if (data.npmMirrorCDN) {
+  // jsdelivr - 推荐CDN
+  if (data.jsdelivrCDN) {
     hexo.log.info(
       `\x1b[32m%s\x1b[0m`,
-      `CDN available: NPMMirror (Recommended)`,
+      `CDN available: jsDelivr (Recommended)`,
     );
-    hexo.locals.set(`cdnTestStatus_npmMirror`, 200);
+    hexo.locals.set(`cdnTestStatus_jsdelivr`, 200);
   } else {
-    hexo.log.warn(`\x1b[31m%s\x1b[0m`, `NPMMirror CDN is unavailable yet.`);
-    hexo.locals.set(`cdnTestStatus_npmMirror`, 404);
+    hexo.log.warn(`\x1b[31m%s\x1b[0m`, `jsDelivr CDN is unavailable yet.`);
+    hexo.locals.set(`cdnTestStatus_jsdelivr`, 404);
   }
 
+  // unpkg
+  if (data.unpkgCDN) {
+    hexo.log.info(`\x1b[32m%s\x1b[0m`, `CDN available: unpkg`);
+    hexo.locals.set(`cdnTestStatus_unpkg`, 200);
+  } else {
+    hexo.log.warn(`\x1b[31m%s\x1b[0m`, `unpkg CDN is unavailable yet.`);
+    hexo.locals.set(`cdnTestStatus_unpkg`, 404);
+  }
+
+  // cdnjs
+  if (data.cdnjsCDN) {
+    hexo.log.info(`\x1b[32m%s\x1b[0m`, `CDN available: CDNJS`);
+    hexo.locals.set(`cdnTestStatus_cdnjs`, 200);
+  } else {
+    hexo.log.warn(`\x1b[31m%s\x1b[0m`, `CDNJS CDN is unavailable yet.`);
+    hexo.locals.set(`cdnTestStatus_cdnjs`, 404);
+  }
+
+  // zstatic
   if (data.zstaticCDN) {
     hexo.log.info(`\x1b[32m%s\x1b[0m`, `CDN available: ZStatic`);
     hexo.locals.set(`cdnTestStatus_zstatic`, 200);
@@ -129,11 +151,12 @@ function checkVersionAndCDNAvailability(data) {
     hexo.locals.set(`cdnTestStatus_zstatic`, 404);
   }
 
-  if (data.cdnjsCDN) {
-    hexo.log.info(`\x1b[32m%s\x1b[0m`, `CDN available: CDNJS`);
-    hexo.locals.set(`cdnTestStatus_cdnjs`, 200);
+  // npmmirror
+  if (data.npmmirrorCDN) {
+    hexo.log.info(`\x1b[32m%s\x1b[0m`, `CDN available: NPMMirror`);
+    hexo.locals.set(`cdnTestStatus_npmmirror`, 200);
   } else {
-    hexo.log.warn(`\x1b[31m%s\x1b[0m`, `CDNJS CDN is unavailable yet.`);
-    hexo.locals.set(`cdnTestStatus_cdnjs`, 404);
+    hexo.log.warn(`\x1b[31m%s\x1b[0m`, `NPMMirror CDN is unavailable yet.`);
+    hexo.locals.set(`cdnTestStatus_npmmirror`, 404);
   }
 }

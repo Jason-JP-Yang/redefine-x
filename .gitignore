@@ -48,3 +48,7 @@ _DelSyncFiles/
 .env
 .env.local
 .vercel
+
+# Personal files
+CHANGELOG_REDEFINE_X.md
+TODO.md
