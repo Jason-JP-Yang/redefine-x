@@ -1,6 +1,6 @@
 {
   "name": "hexo-theme-redefine-x",
-  "version": "2.8.5",
+  "version": "2.8.6",
   "private": false,
   "description": "Redefine-X your writing with Hexo Theme Redefine-X. A customized fork of hexo-theme-redefine.",
   "scripts": {
@@ -9,10 +9,10 @@
     "build:css": "npx @tailwindcss/cli -i source/css/tailwind.source.css -o source/css/build/tailwind.css --minify",
     "build:js": "node source/js/build.js",
     "watch:css": "npx @tailwindcss/cli -i source/css/tailwind.source.css -o source/css/build/tailwind.css --watch --minify",
-    "release": "npx standard-version",
-    "release:minor": "npx standard-version --release-as minor",
-    "release:patch": "npx standard-version --release-as patch",
-    "release:major": "npx standard-version --release-as major"
+    "release": "npx standard-version -s",
+    "release:minor": "npx standard-version --release-as minor -s",
+    "release:patch": "npx standard-version --release-as patch -s",
+    "release:major": "npx standard-version --release-as major -s"
   },
   "repository": {
     "type": "git",
