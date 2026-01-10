@@ -2,7 +2,6 @@
 import initUtils from "./utils.js";
 import initTyped from "./plugins/typed.js";
 import initModeToggle from "./tools/lightDarkSwitch.js";
-import initLazyLoad from "./layouts/lazyload.js";
 import initScrollTopBottom from "./tools/scrollTopBottom.js";
 import initLocalSearch from "./tools/localSearch.js";
 import initCopyCode from "./tools/codeBlock.js";
@@ -76,7 +75,12 @@ export const main = {
     }
 
     if (theme.articles.lazyload === true) {
-      initLazyLoad();
+      // Dynamic import to avoid loading lazyload module when disabled
+      import("./layouts/lazyload.js").then((module) => {
+        module.default();
+      }).catch((err) => {
+        console.error("[Redefine-X] Failed to load lazyload module:", err);
+      });
     }
   },
 };
