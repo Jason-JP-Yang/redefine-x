@@ -1,199 +1,150 @@
 /**
- * Redefine-X Image Preloader - Runtime Phase
- *
- * This module handles image loading with:
+ * Redefine-X Image Preloader - Rewritten from scratch
+ * 
+ * Clean and efficient lazy loading:
  * - IntersectionObserver for viewport detection
- * - XMLHttpRequest for same-origin images
- * - Fallback to img element for cross-origin images
- * - Smooth transition from placeholder to loaded image
+ * - Direct Image() loading without XHR/blob/CORS complications
+ * - Single request per image, instant display
+ * - Graceful error handling
  */
 
-const initializedPreloaders = new WeakSet();
-let observer = null;
+const loadedPreloaders = new WeakSet();
+let intersectionObserver = null;
 
 /**
- * Check if URL is cross-origin
+ * Check if URL is same-origin
  */
-function isCrossOrigin(url) {
+function isSameOrigin(url) {
   try {
-    const imgUrl = new URL(url, window.location.href);
-    return imgUrl.origin !== window.location.origin;
+    const urlObj = new URL(url, window.location.href);
+    return urlObj.origin === window.location.origin;
   } catch {
-    return true;
+    return false;
   }
 }
 
 /**
- * Load image using img element (works for all origins)
- * @param {string} src - Image URL
- * @returns {Promise<string>} - Resolves with the src when loaded
+ * Load image - simple and direct
  */
-function loadImageDirect(src) {
+function loadImage(src, alt) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(src);
-    img.onerror = () => {
-      // Retry without crossOrigin for servers that don't support CORS
-      const img2 = new Image();
-      img2.onload = () => resolve(src);
-      img2.onerror = () => reject(new Error("Failed to load image"));
-      img2.src = src;
-    };
+    img.alt = alt;
+    
+    // Only set crossOrigin for same-origin images to avoid CORS issues
+    if (isSameOrigin(src)) {
+      img.crossOrigin = "anonymous";
+    }
+    
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load: ${src}`));
+    
     img.src = src;
   });
 }
 
 /**
- * Load same-origin image using XMLHttpRequest and return blob URL
- * @param {string} src - Image URL
- * @returns {Promise<string>} - Resolves with blob URL
+ * Replace preloader with loaded image
  */
-function loadImageXHR(src) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("GET", src, true);
-    xhr.responseType = "blob";
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const blobUrl = URL.createObjectURL(xhr.response);
-        resolve(blobUrl);
-      } else {
-        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error("Network error"));
-    xhr.ontimeout = () => reject(new Error("Timeout"));
-    xhr.timeout = 30000;
-    xhr.send();
-  });
-}
-
-/**
- * Process a single preloader element
- * @param {HTMLElement} preloader - The .img-preloader div element
- */
-async function processPreloader(preloader) {
-  if (preloader.dataset.loading === "true" || preloader.dataset.loaded === "true") {
-    return;
-  }
-
-  preloader.dataset.loading = "true";
-
-  const src = preloader.dataset.src;
-  const alt = preloader.dataset.alt || "";
+function replacePreloader(preloader, img) {
+  // Transfer classes
+  const classes = Array.from(preloader.classList).filter(c => !c.startsWith("img-preloader"));
+  classes.forEach(c => img.classList.add(c));
+  
+  // Set dimensions
   const width = preloader.dataset.width;
   const height = preloader.dataset.height;
-  const crossOrigin = isCrossOrigin(src);
-
-  try {
-    // Use XHR for same-origin (blob URL), direct load for cross-origin
-    const imageSrc = crossOrigin ? await loadImageDirect(src) : await loadImageXHR(src);
-
-    const img = document.createElement("img");
-    img.src = imageSrc;
-    img.alt = alt;
-    // Store both original URL and current src (blob or original)
-    img.dataset.originalSrc = src;
-    img.dataset.blobSrc = imageSrc;
-    if (width) img.width = parseInt(width, 10);
-    if (height) img.height = parseInt(height, 10);
-
-    const originalClasses = Array.from(preloader.classList).filter(
-      (cls) => !cls.startsWith("img-preloader")
-    );
-    if (originalClasses.length > 0) {
-      img.className = originalClasses.join(" ");
-    }
-
-    img.classList.add("img-preloader-loaded");
-    preloader.dataset.loaded = "true";
-    preloader.classList.add("img-preloader-fade-out");
-
-    setTimeout(() => {
-      if (preloader.parentNode) {
-        preloader.parentNode.replaceChild(img, preloader);
-      }
-      setTimeout(() => URL.revokeObjectURL(imageSrc), 1000);
-    }, 200);
-  } catch (error) {
-    console.error("[img-preloader] Failed:", src, error);
-
-    preloader.classList.add("img-preloader-error");
-    const skeleton = preloader.querySelector(".img-preloader-skeleton");
-    if (skeleton) {
-      skeleton.innerHTML = `
-        <i class="fa-solid fa-circle-xmark img-preloader-error-icon"></i>
-        <div class="img-preloader-error-text">
-          <div class="error-message">Failed to load image</div>
-          <div class="error-url">${src}</div>
-        </div>
-      `;
-    }
-    preloader.dataset.loading = "false";
-  }
+  if (width) img.width = parseInt(width, 10);
+  if (height) img.height = parseInt(height, 10);
+  
+  // Mark and animate
+  img.classList.add("img-preloader-loaded");
+  img.dataset.originalSrc = preloader.dataset.src;
+  preloader.classList.add("img-preloader-fade-out");
+  
+  // Replace DOM node
+  setTimeout(() => {
+    preloader.parentNode?.replaceChild(img, preloader);
+  }, 200);
 }
 
 /**
- * Create IntersectionObserver for lazy loading
+ * Show error state
  */
-function createObserver() {
-  if (observer) {
-    return observer;
+function showError(preloader, src) {
+  preloader.classList.add("img-preloader-error");
+  const skeleton = preloader.querySelector(".img-preloader-skeleton");
+  if (skeleton) {
+    skeleton.innerHTML = `
+      <i class="fa-solid fa-circle-xmark img-preloader-error-icon"></i>
+      <div class="img-preloader-error-text">
+        <div class="error-message">Failed to load image</div>
+        <div class="error-url">${src}</div>
+      </div>
+    `;
   }
-
-  observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const preloader = entry.target;
-          observer.unobserve(preloader);
-          processPreloader(preloader);
-        }
-      });
-    },
-    {
-      rootMargin: "50px 0px", // Start loading 50px before entering viewport
-      threshold: 0.01,
-    }
-  );
-
-  return observer;
 }
 
 /**
- * Initialize lazy loading for all img-preloader elements
+ * Load a single preloader
+ */
+async function processPreloader(preloader) {
+  // Skip if already processed
+  if (loadedPreloaders.has(preloader)) return;
+  loadedPreloaders.add(preloader);
+  
+  const src = preloader.dataset.src;
+  const alt = preloader.dataset.alt || "";
+  
+  try {
+    const img = await loadImage(src, alt);
+    replacePreloader(preloader, img);
+  } catch (error) {
+    console.error("[lazyload]", error);
+    showError(preloader, src);
+  }
+}
+
+/**
+ * Create intersection observer
+ */
+function getObserver() {
+  if (!intersectionObserver) {
+    intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            intersectionObserver.unobserve(entry.target);
+            processPreloader(entry.target);
+          }
+        });
+      },
+      {
+        rootMargin: "100px",
+        threshold: 0.01,
+      }
+    );
+  }
+  return intersectionObserver;
+}
+
+/**
+ * Initialize lazy loading
  */
 export default function initLazyLoad() {
-  const preloaders = document.querySelectorAll(".img-preloader");
-
-  if (preloaders.length === 0) {
-    return;
-  }
-
-  const obs = createObserver();
-
+  const preloaders = document.querySelectorAll(".img-preloader:not([data-observed])");
+  if (preloaders.length === 0) return;
+  
+  const observer = getObserver();
   preloaders.forEach((preloader) => {
-    // Skip already initialized or loaded preloaders
-    if (initializedPreloaders.has(preloader) || preloader.dataset.loaded === "true") {
-      return;
-    }
-
-    initializedPreloaders.add(preloader);
-    obs.observe(preloader);
+    preloader.dataset.observed = "true";
+    observer.observe(preloader);
   });
 }
 
 /**
- * Force load all visible preloaders (useful for encrypted content reveal)
+ * Force load all preloaders (for encrypted content)
  */
 export function forceLoadAllPreloaders() {
-  const preloaders = document.querySelectorAll(".img-preloader");
-  preloaders.forEach((preloader) => {
-    if (preloader.dataset.loaded !== "true" && preloader.dataset.loading !== "true") {
-      processPreloader(preloader);
-    }
-  });
+  document.querySelectorAll(".img-preloader").forEach(processPreloader);
 }
