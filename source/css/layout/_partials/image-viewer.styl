@@ -4,34 +4,87 @@
   top 0
   width 100%
   height 100%
+  z-index $z-index-8
+  box-sizing border-box
+
   display flex
   align-items center
   justify-content center
-  background rgba(0, 0, 0, 0)
-  visibility hidden
-  z-index $z-index-8
+
   padding 6%
-  box-sizing border-box
+  background rgba(0, 0, 0, 0)
+  opacity 0
+  visibility hidden
+  pointer-events none
+
   backdrop-filter blur(0px)
   -webkit-backdrop-filter blur(0px)
-  transition-t('visibility, background,backdrop-filter', '0, 0,0', '0.3, 0.3,0.3', 'ease, ease,ease')
+
+  // Unified 360ms transition for smooth open/close symmetry
+  transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+            background 360ms cubic-bezier(0.22, 1, 0.36, 1),
+            backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1),
+            -webkit-backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1),
+            visibility 0ms linear 360ms
 
   &.active
-    background rgba(0, 0, 0, 0.3)
-    backdrop-filter blur(10px)
-    -webkit-backdrop-filter blur(10px)
+    background rgba(0, 0, 0, 0.35)
+    opacity 1
     visibility visible
+    pointer-events auto
 
-    img
-      cursor grab
-      transform scale(1)
-      opacity 1
-      padding 2px
-      background var(--background-color)
+    backdrop-filter blur(14px)
+    -webkit-backdrop-filter blur(14px)
 
-  img
-    max-width 100%
-    max-height 100%
-    transform scale(0.5)
-    opacity 0
-    transition-t('transform, opacity', '0,0', '0.3,0.3', 'ease')
+    transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+              background 360ms cubic-bezier(0.22, 1, 0.36, 1),
+              backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1),
+              -webkit-backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1),
+              visibility 0ms linear 0ms
+
+  &.is-interacting
+    .image-viewer-stage
+      transition none
+    .image-viewer-stage img
+      transition none
+
+
+.image-viewer-stage
+  width 100%
+  height 100%
+  display flex
+  align-items center
+  justify-content center
+
+  transform translateY(10px) scale(0.98)
+  filter blur(10px)
+  opacity 0
+  transition transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
+            filter 360ms cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 220ms cubic-bezier(0.22, 1, 0.36, 1)
+
+  .image-viewer-container.active &
+    transform translateY(0px) scale(1)
+    filter blur(0px)
+    opacity 1
+
+
+.image-viewer-stage img
+  // Fit within viewport by default; pan/zoom happens via JS transform
+  max-width 92vw
+  max-height 92vh
+  width auto !important
+  height auto !important
+
+  border-radius $usr-img-border-radius
+  background var(--background-color)
+  padding 2px
+  box-sizing border-box
+  user-select none
+  -webkit-user-drag none
+  touch-action none
+  will-change transform
+
+  box-shadow 0 18px 60px rgba(0, 0, 0, 0.35)
+
+  transition opacity 220ms cubic-bezier(0.22, 1, 0.36, 1)
