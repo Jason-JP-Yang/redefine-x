@@ -143,9 +143,17 @@ a
     transition opacity 0.2s ease
 
   &.img-preloader-error
+    max-height 200px
+    height auto !important
+    aspect-ratio unset !important
+    transition max-height 0.4s ease-out, padding 0.4s ease-out
+    padding 20px 0
+    
     .img-preloader-skeleton
       animation none
       background var(--third-background-color)
+      position relative
+      height auto
 
     .img-preloader-error-icon
       font-size 3rem
@@ -168,6 +176,8 @@ a
         word-break break-all
         font-size 0.75rem
         opacity 0.7
+        max-width 100%
+        overflow-wrap break-word
 
 .img-preloader-loaded
   animation img-preloader-fade-in 0.3s ease forwards

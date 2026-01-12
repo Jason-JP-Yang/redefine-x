@@ -327,7 +327,10 @@ articles:
     enable: true # Whether to enable
     default: cc_by_nc_sa # Default license, can be cc_by_nc_sa, cc_by_nd, cc_by_nc, cc_by_sa, cc_by, all_rights_reserved, public_domain
   # Whether to enable lazyload for images
+  # Strongly recommended to enable this feature to improve page load speed
   lazyload: true
+  # Preload Images that out of viewpoint when Idle to improve user experience
+  lazyload_preload: false
   # Pangu.js (automatically add space between Chinese and English). See https://github.com/vinta/pangu.js
   pangu_js: false
   # Article recommendation. Requires @node-rs/jieba (npm install @node-rs/jieba). Transplanted from hexo-theme-volantis.

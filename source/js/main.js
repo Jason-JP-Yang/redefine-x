@@ -6,6 +6,7 @@ import initScrollTopBottom from "./tools/scrollTopBottom.js";
 import initLocalSearch from "./tools/localSearch.js";
 import initCopyCode from "./tools/codeBlock.js";
 import initBookmarkNav from "./layouts/bookmarkNav.js";
+import initLazyLoad from "./layouts/lazyload.js";
 
 export const main = {
   themeInfo: {
@@ -75,11 +76,8 @@ export const main = {
     }
 
     if (theme.articles.lazyload === true) {
-      // Dynamic import to avoid loading lazyload module when disabled
-      import("./layouts/lazyload.js").then((module) => {
-        module.default();
-      }).catch((err) => {
-        console.error("[Redefine-X] Failed to load lazyload module:", err);
+      initLazyLoad({
+        preload: theme.articles.lazyload_preload === true
       });
     }
   },
