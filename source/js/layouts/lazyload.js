@@ -11,6 +11,7 @@
 
 const loadedPreloaders = new WeakSet();
 const preloadedImages = new Map();
+const inflightLoads = new Map();
 let intersectionObserver = null;
 let preloadEnabled = false;
 let preloadQueue = [];
@@ -48,6 +49,35 @@ function loadImage(src, alt) {
     
     img.src = src;
   });
+}
+
+function cloneLoadedImage(img, alt) {
+  const clone = img.cloneNode(false);
+  clone.alt = alt || img.alt || "";
+  if (img.crossOrigin) clone.crossOrigin = img.crossOrigin;
+  clone.src = img.src;
+  return clone;
+}
+
+async function ensureImageCached(src, alt) {
+  if (preloadedImages.has(src)) return preloadedImages.get(src);
+  if (inflightLoads.has(src)) return inflightLoads.get(src);
+
+  const p = loadImage(src, alt).then((img) => {
+    preloadedImages.set(src, img);
+    inflightLoads.delete(src);
+    return img;
+  }).catch((err) => {
+    inflightLoads.delete(src);
+    throw err;
+  });
+  inflightLoads.set(src, p);
+  return p;
+}
+
+export async function requestImageBySrc(src, alt = "") {
+  const img = await ensureImageCached(src, alt);
+  return cloneLoadedImage(img, alt);
 }
 
 /**
@@ -104,11 +134,7 @@ async function processPreloader(preloader) {
   const alt = preloader.dataset.alt || "";
   
   try {
-    // Check if image is already preloaded
-    let img = preloadedImages.get(src);
-    if (!img) {
-      img = await loadImage(src, alt);
-    }
+    const img = await requestImageBySrc(src, alt);
     replacePreloader(preloader, img);
   } catch (error) {
     console.error("[lazyload]", error);
@@ -129,8 +155,7 @@ async function preloadImageToCache(preloader) {
   }
   
   try {
-    const img = await loadImage(src, alt);
-    preloadedImages.set(src, img);
+    await ensureImageCached(src, alt);
   } catch (error) {
     // Silently fail for preload, will show error when entering viewport
     console.warn("[lazyload preload]", error);

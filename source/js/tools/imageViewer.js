@@ -1,3 +1,5 @@
+import { requestImageBySrc } from "../layouts/lazyload.js";
+
 export default function imageViewer() {
   const global = window.__REDEFINE_X_IMAGE_VIEWER__ || (window.__REDEFINE_X_IMAGE_VIEWER__ = {
     docBound: false, maskEl: null, stageEl: null, handlers: {}, api: null
@@ -5,9 +7,16 @@ export default function imageViewer() {
 
   const maskDom = document.querySelector(".image-viewer-container");
   const stage = maskDom?.querySelector(".image-viewer-stage");
-  if (!maskDom || !stage) return;
+  const switcher = maskDom?.querySelector(".image-viewer-switcher");
+  const switcherPages = switcher?.querySelector(".image-viewer-switcher-pages");
+  const switcherPrev = switcher?.querySelector(".image-viewer-switcher-btn.prev");
+  const switcherNext = switcher?.querySelector(".image-viewer-switcher-btn.next");
+  const switcherSidePrev = maskDom?.querySelector(".image-viewer-switcher-side.prev");
+  const switcherSideNext = maskDom?.querySelector(".image-viewer-switcher-side.next");
+  if (!maskDom || !stage || !switcher || !switcherPages || !switcherPrev || !switcherNext || !switcherSidePrev || !switcherSideNext) return;
 
   const VIEWABLE_IMG_SELECTOR = ".markdown-body img, .masonry-item img, #shuoshuo-content img";
+  const VIEWABLE_ITEM_SELECTOR = ".markdown-body img, .markdown-body .img-preloader, .masonry-item img, .masonry-item .img-preloader, #shuoshuo-content img, #shuoshuo-content .img-preloader";
   const OPEN_MS = 420, CLOSE_MS = 360, EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
   // Viewer decoration styles (must match CSS .image-viewer-stage img)
   // padding: 2px creates the border effect that transitions during animation
@@ -43,15 +52,84 @@ export default function imageViewer() {
     }, delay);
   };
 
-  const isViewableImg = (img) => img && !img.closest(".image-viewer-container") && 
-    img.complete && img.naturalWidth && !img.hasAttribute("data-no-viewer");
+  const isViewableImg = (img) => img && !img.closest(".image-viewer-container") && !img.hasAttribute("data-no-viewer");
+  const isViewablePreloader = (el) => el && !el.closest(".image-viewer-container") && el.classList.contains("img-preloader");
 
-  const collectLoadedImages = () => Array.from(document.querySelectorAll(VIEWABLE_IMG_SELECTOR))
-    .filter(node => node instanceof HTMLImageElement && isViewableImg(node));
+  const toAbsUrl = (src) => {
+    try { return new URL(src, window.location.href).href; } catch { return String(src || ""); }
+  };
+
+  const getContextRoot = (node) => {
+    if (!node) return document;
+    const markdown = node.closest?.(".markdown-body");
+    if (markdown) return markdown;
+    const shuoshuo = node.closest?.("#shuoshuo-content");
+    if (shuoshuo) return shuoshuo;
+    const masonryItem = node.closest?.(".masonry-item");
+    if (masonryItem) return masonryItem.parentElement || document;
+    return document;
+  };
+
+  const collectItems = (root) => {
+    const nodes = Array.from((root || document).querySelectorAll(VIEWABLE_ITEM_SELECTOR));
+    const items = [];
+    nodes.forEach((node) => {
+      if (node instanceof HTMLImageElement) {
+        if (!isViewableImg(node)) return;
+        const src = node.dataset.originalSrc || node.currentSrc || node.src;
+        items.push({
+          kind: "img",
+          node,
+          src: String(src || ""),
+          absSrc: toAbsUrl(src),
+          alt: node.alt || "",
+          width: node.naturalWidth || 0,
+          height: node.naturalHeight || 0
+        });
+        return;
+      }
+      if (node instanceof HTMLElement && isViewablePreloader(node)) {
+        const src = node.dataset.src;
+        if (!src) return;
+        const w = Number(node.dataset.width || 0);
+        const h = Number(node.dataset.height || 0);
+        items.push({
+          kind: "preloader",
+          node,
+          src: String(src),
+          absSrc: toAbsUrl(src),
+          alt: node.dataset.alt || "",
+          width: Number.isFinite(w) ? w : 0,
+          height: Number.isFinite(h) ? h : 0
+        });
+      }
+    });
+    return items;
+  };
+
+  const findItemIndexByNodeOrSrc = (items, node) => {
+    const directIndex = items.findIndex(it => it.node === node);
+    if (directIndex >= 0) return directIndex;
+    if (node instanceof HTMLImageElement) {
+      const src = node.dataset.originalSrc || node.currentSrc || node.src;
+      const abs = toAbsUrl(src);
+      return items.findIndex(it => it.absSrc === abs);
+    }
+    const pre = node?.closest?.(".img-preloader");
+    if (pre instanceof HTMLElement) {
+      const src = pre.dataset.src;
+      const abs = toAbsUrl(src);
+      return items.findIndex(it => it.absSrc === abs);
+    }
+    return -1;
+  };
 
   const state = {
-    isOpen: false, isAnimating: false, currentIndex: -1, items: [], activeImg: null,
-    placeholder: null, saved: null, scale: 1, translateX: 0, translateY: 0, isDragging: false,
+    isOpen: false, isAnimating: false, currentIndex: -1, items: [], contextRoot: null,
+    activeImg: null, activeEl: null,
+    articleOriginalNode: null, placeholder: null, saved: null,
+    switcherShowTimer: null,
+    scale: 1, translateX: 0, translateY: 0, isDragging: false,
     dragStartX: 0, dragStartY: 0, pointers: new Map(), pinchStart: null,
     fixedHidden: false
   };
@@ -154,12 +232,13 @@ export default function imageViewer() {
   /**
    * Restore original inline styles to the image.
    */
-  const restoreOriginal = (img) => {
-    if (!state.saved) return;
-    if (state.saved.styleAttr == null) {
+  const restoreOriginal = (img, savedOverride) => {
+    const saved = savedOverride || state.saved;
+    if (!saved) return;
+    if (saved.styleAttr == null) {
       img.removeAttribute("style");
     } else {
-      img.setAttribute("style", state.saved.styleAttr);
+      img.setAttribute("style", saved.styleAttr);
     }
     img.classList.remove("img-preloader-loaded");
     img.style.animation = "";
@@ -278,121 +357,83 @@ export default function imageViewer() {
     props.forEach(p => img.style[p] = "");
   };
 
-  const onKeydown = e => {
-    if (!state.isOpen) return;
-    if (e.key === "Escape") close();
-    else if (e.key === "ArrowLeft") navigate(-1);
-    else if (e.key === "ArrowRight") navigate(1);
+  const computeViewerRectFromAspect = (aspectRatio) => {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const maxW = vw * 0.92, maxH = vh * 0.92;
+    const contentMaxW = maxW - VIEWER_PADDING * 2;
+    const contentMaxH = maxH - VIEWER_PADDING * 2;
+    const ar = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
+    let contentW = contentMaxW, contentH = contentW / ar;
+    if (contentH > contentMaxH) { contentH = contentMaxH; contentW = contentH * ar; }
+    const width = contentW + VIEWER_PADDING * 2;
+    const height = contentH + VIEWER_PADDING * 2;
+    return { left: (vw - width) / 2, top: (vh - height) / 2, width, height };
   };
 
-  async function open(img) {
-    if (state.isOpen || state.isAnimating) return;
-    state.isOpen = state.isAnimating = true;
-    state.items = collectLoadedImages();
-    state.currentIndex = state.items.indexOf(img);
-    if (state.currentIndex < 0) { state.items = [img]; state.currentIndex = 0; }
+  const getNodeAspectRatio = (node, item) => {
+    if (item && item.width > 0 && item.height > 0) return item.width / item.height;
+    if (node instanceof HTMLImageElement) {
+      if (node.naturalWidth && node.naturalHeight) return node.naturalWidth / node.naturalHeight;
+    }
+    const rect = node?.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && rect.height > 0) return rect.width / rect.height;
+    return 1;
+  };
 
-    // Save original state BEFORE any DOM changes
-    state.saved = saveOriginal(img);
-    state.scale = 1; state.translateX = state.translateY = 0;
-    state.pointers.clear(); state.pinchStart = null; state.isDragging = false;
+  const createPlaceholderForNode = (node, aspectRatio) => {
+    const ph = document.createElement("span");
+    ph.className = "image-viewer-placeholder";
+    const cs = getComputedStyle(node);
+    ph.style.cssText = `
+      display:${cs.display};
+      width:${cs.width};
+      max-width:${cs.maxWidth};
+      max-height:${cs.maxHeight};
+      height:auto;
+      aspect-ratio:${aspectRatio};
+      margin:${cs.margin};
+      padding:0;
+      border:none;
+      visibility:hidden;
+      box-sizing:border-box;
+    `;
+    return ph;
+  };
 
-    // Create placeholder that maintains the same responsive behavior as the original image
-    state.placeholder = createPlaceholder(img, state.saved);
-    img.before(state.placeholder);
-    
-    // Compute target rect in viewer (centered)
-    const viewerRect = computeViewerRect(img);
+  const createStagePreloader = (viewerRect, aspectRatio) => {
+    const pre = document.createElement("div");
+    pre.className = "img-preloader image-viewer-img-preloader";
+    pre.dataset.src = "";
+    pre.dataset.width = "0";
+    pre.dataset.height = "0";
+    pre.style.width = `${viewerRect.width}px`;
+    pre.style.height = `${viewerRect.height}px`;
+    pre.style.aspectRatio = `${aspectRatio}`;
+    pre.innerHTML = `<div class="img-preloader-skeleton"></div>`;
+    return pre;
+  };
 
-    // Disable scroll and hide fixed elements
-    document.documentElement.style.overflow = "hidden";
-    state.fixedHidden = shouldHideFixedElements();
-    if (state.fixedHidden) hideFixedElements();
-
-    stage.innerHTML = "";
-    maskDom.style.zIndex = "";
-    maskDom.classList.add("active");
-
-    // Open animation: fly from article position to viewer center
-    // Use high z-index to be above image-viewer-container's backdrop-filter
-    setFlightStyles(
-      img,
-      viewerRect,                    // target: viewer center
-      state.saved.rect,              // from: article position (saved before DOM change)
-      {                              // from decoration (article image has minimal decoration)
-        padding: state.saved.padding,
-        backgroundColor: state.saved.backgroundColor,
-        boxShadow: state.saved.boxShadow
-      },
-      state.saved.borderRadius,      // from border-radius
-      document.body,                 // container
-      FLIGHT_Z_OPEN                  // z-index above container
-    );
-
-    await animateFlight(img, OPEN_MS, VIEWER_DECORATION, state.saved.borderRadius);
-    
-    // Now place image in stage. The CSS has "width: auto !important; height: auto !important"
-    // but that's fine because we're clearing the fixed dimensions and letting CSS handle sizing.
-    // The key is that the decorations (padding, background, box-shadow, border-radius) are 
-    // already set by animateFlight and kept by clearFlightStyles(img, true).
-    clearFlightStyles(img, true);
-    stage.appendChild(img);
-    
-    // Set styles for stage display (these will work with the CSS)
-    state.activeImg = img;
-    img.style.cursor = "grab";
-    img.style.touchAction = "none";
-    img.style.width = "";  // Let CSS max-width/max-height handle sizing
-    img.style.height = "";
-    applyTransform();
-    constrainVisible();
-
-    state.isAnimating = false;
-    document.addEventListener("keydown", onKeydown);
-  }
-
-  async function close() {
-    if (!state.isOpen || state.isAnimating) return;
-    if (!state.activeImg || !state.placeholder) return;
-
-    state.isAnimating = true;
-    document.removeEventListener("keydown", onKeydown);
-
-    const img = state.activeImg, ph = state.placeholder;
-    const cs = getComputedStyle(img);
-    
-    // Get the current visual rect of image in viewer (includes user's pan/zoom transform)
-    const fromRect = img.getBoundingClientRect();
-    
-    // Get the current position of placeholder (where image should return to)
-    const phRect = ph.getBoundingClientRect();
-    const toRect = { left: phRect.left, top: phRect.top, width: phRect.width, height: phRect.height };
-
-    // Calculate transform to animate FROM current position TO target position
-    const dx = fromRect.left - toRect.left;
-    const dy = fromRect.top - toRect.top;
-    const sx = fromRect.width / toRect.width;
-    const sy = fromRect.height / toRect.height;
-
-    const targetDecoration = {
-      padding: state.saved?.padding ?? "0",
-      backgroundColor: state.saved?.backgroundColor ?? "transparent",
-      boxShadow: state.saved?.boxShadow ?? "none"
+  const waitForImageReady = (img) => new Promise((resolve, reject) => {
+    if (img.complete && img.naturalWidth) return resolve(img);
+    const onLoad = () => cleanup(resolve, img);
+    const onErr = () => cleanup(reject, new Error("Image failed to load"));
+    const cleanup = (fn, arg) => {
+      img.removeEventListener("load", onLoad);
+      img.removeEventListener("error", onErr);
+      fn(arg);
     };
+    img.addEventListener("load", onLoad);
+    img.addEventListener("error", onErr);
+  });
 
-    // Lower the blur mask BEFORE moving the image, so backdrop-filter never affects the image.
-    // Keep mask above article but below navbar and image.
-    maskDom.style.zIndex = String(MASK_Z_CLOSE);
-
-    // CRITICAL: Set new styles in ONE operation to prevent flash
-    // We set position:fixed with transform that places image at its CURRENT visual position
-    // Then animate the transform to (0,0) scale(1,1) to reach target position
-    img.style.cssText = `
+  const setFixedAtRect = (el, rect, zIndex) => {
+    const cs = getComputedStyle(el);
+    el.style.cssText = `
       position:fixed;
-      left:${toRect.left}px;
-      top:${toRect.top}px;
-      width:${toRect.width}px;
-      height:${toRect.height}px;
+      left:${rect.left}px;
+      top:${rect.top}px;
+      width:${rect.width}px;
+      height:${rect.height}px;
       border-radius:${cs.borderRadius};
       box-sizing:border-box;
       padding:${cs.padding};
@@ -401,70 +442,619 @@ export default function imageViewer() {
       margin:0;
       max-width:none;
       max-height:none;
-      z-index:${FLIGHT_Z_CLOSE};
+      z-index:${zIndex};
+      pointer-events:none;
+      transform-origin:center;
+      will-change:transform,opacity;
+      transition:none;
+      transform:translate(0, 0) scale(1, 1);
+      opacity:1;
+      animation:none;
+    `;
+  };
+
+  const setGenericFlightStyles = (el, targetRect, fromRect, zIndex) => {
+    const dx = fromRect.left - targetRect.left;
+    const dy = fromRect.top - targetRect.top;
+    const sx = fromRect.width / targetRect.width;
+    const sy = fromRect.height / targetRect.height;
+    el.style.cssText = `
+      position:fixed;
+      left:${targetRect.left}px;
+      top:${targetRect.top}px;
+      width:${targetRect.width}px;
+      height:${targetRect.height}px;
+      margin:0;
+      max-width:none;
+      max-height:none;
+      z-index:${zIndex};
       pointer-events:none;
       transform-origin:top left;
       will-change:transform,opacity;
       transition:none;
       transform:translate(${dx}px, ${dy}px) scale(${sx}, ${sy});
+      opacity:1;
       animation:none;
     `;
-    img.classList.remove("img-preloader-loaded");
-    
-    // Move to body immediately after setting styles - no flash because transform is already set
-    document.body.appendChild(img);
-    
-    // Clear stage after img is moved
+    document.body.appendChild(el);
+  };
+
+  const animateGenericFlight = async (el, durationMs) => {
+    await nextFrame();
+    await nextFrame();
+    el.style.transition = `transform ${durationMs}ms ${EASE}, opacity ${durationMs}ms ${EASE}`;
+    el.style.transform = "translate(0, 0) scale(1, 1)";
+    return new Promise(resolve => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        el.removeEventListener("transitionend", onEnd);
+        resolve();
+      };
+      const onEnd = e => e.target === el && e.propertyName === "transform" && finish();
+      el.addEventListener("transitionend", onEnd);
+      setTimeout(finish, durationMs + 80);
+    });
+  };
+
+  const clearFixedStyles = (el) => {
+    ["position", "left", "top", "width", "height", "margin", "maxWidth", "maxHeight", "zIndex", "pointerEvents", "transformOrigin", "willChange", "transition", "transform", "opacity", "animation", "boxSizing", "padding", "backgroundColor", "boxShadow", "borderRadius"].forEach(p => {
+      el.style[p] = "";
+    });
+  };
+
+  const onKeydown = e => {
+    if (!state.isOpen) return;
+    if (e.key === "Escape") close();
+    else if (e.key === "ArrowLeft") navigate(-1);
+    else if (e.key === "ArrowRight") navigate(1);
+  };
+
+  const getLiveNodeForItem = (item) => {
+    if (!state.contextRoot) return item.node;
+    if (item.kind === "preloader") {
+      const pres = Array.from(state.contextRoot.querySelectorAll(".img-preloader"));
+      const found = pres.find(p => toAbsUrl(p.dataset.src) === item.absSrc);
+      return found || item.node;
+    }
+    const imgs = Array.from(state.contextRoot.querySelectorAll("img"));
+    const found = imgs.find(img => toAbsUrl(img.dataset.originalSrc || img.currentSrc || img.src) === item.absSrc);
+    return found || item.node;
+  };
+
+  const updateSwitcher = () => {
+    switcherPages.innerHTML = "";
+    state.items.forEach((_, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "image-viewer-switcher-page";
+      btn.dataset.index = String(idx);
+      btn.textContent = String(idx + 1);
+      switcherPages.appendChild(btn);
+    });
+    updateSwitcherActive();
+  };
+
+  const updateSwitcherActive = () => {
+    Array.from(switcherPages.children).forEach((node) => {
+      if (!(node instanceof HTMLElement)) return;
+      const idx = Number(node.dataset.index || "-1");
+      node.classList.toggle("active", idx === state.currentIndex);
+    });
+    const activeBtn = switcherPages.querySelector(`.image-viewer-switcher-page[data-index="${state.currentIndex}"]`);
+    activeBtn?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  };
+
+  const hideSwitcher = () => {
+    if (state.switcherShowTimer) {
+      clearTimeout(state.switcherShowTimer);
+      state.switcherShowTimer = null;
+    }
+    switcher.classList.remove("shown");
+    switcherSidePrev.classList.remove("shown");
+    switcherSideNext.classList.remove("shown");
+  };
+
+  const scheduleShowSwitcher = () => {
+    if (state.switcherShowTimer) clearTimeout(state.switcherShowTimer);
+    state.switcherShowTimer = setTimeout(() => {
+      state.switcherShowTimer = null;
+      if (!state.isOpen || state.isAnimating) return;
+      switcher.classList.add("shown");
+      switcherSidePrev.classList.add("shown");
+      switcherSideNext.classList.add("shown");
+    }, 300);
+  };
+
+  const mountLoadedImgToStage = (img) => {
     stage.innerHTML = "";
+    stage.appendChild(img);
+    state.activeImg = img;
+    state.activeEl = img;
+    img.style.cursor = "grab";
+    img.style.touchAction = "none";
+    img.style.width = "";
+    img.style.height = "";
+    applyTransform();
+    constrainVisible();
+  };
 
-    // Start blur/background fade-out exactly when the flight transition starts.
-    // CSS transition duration is 360ms, matching CLOSE_MS, so they end together.
-    // Image stays ABOVE the blur layer (and below navbar) for the whole close.
-    maskDom.classList.remove("active");
+  const mountPreloaderToStage = (pre) => {
+    stage.innerHTML = "";
+    stage.appendChild(pre);
+    state.activeImg = null;
+    state.activeEl = pre;
+  };
 
-    // Animate flight back to article position
-    await animateFlight(img, CLOSE_MS, targetDecoration, state.saved?.borderRadius);
+  const openItemAtIndex = async (index, triggerNode) => {
+    const item = state.items[index];
+    if (!item) return;
+    const liveNode = getLiveNodeForItem(item);
+    const aspectRatio = getNodeAspectRatio(liveNode, item);
+    const viewerRect = (liveNode instanceof HTMLImageElement && liveNode.naturalWidth && liveNode.naturalHeight)
+      ? computeViewerRect(liveNode)
+      : computeViewerRectFromAspect(aspectRatio);
 
-    // Restore original styles BEFORE replacing placeholder
-    clearFlightStyles(img, false);
-    restoreOriginal(img);
-    
-    // Replace placeholder with the image (now img has correct styles, no flash)
-    ph.replaceWith(img);
+    state.scale = 1; state.translateX = state.translateY = 0;
+    state.pointers.clear(); state.pinchStart = null; state.isDragging = false;
 
-    // Re-enable scroll and show fixed elements after close animation completes
+    if (liveNode instanceof HTMLImageElement) {
+      state.saved = saveOriginal(liveNode);
+      state.articleOriginalNode = liveNode;
+      state.placeholder = createPlaceholderForNode(liveNode, aspectRatio);
+      liveNode.before(state.placeholder);
+
+      setFlightStyles(
+        liveNode,
+        viewerRect,
+        state.saved.rect,
+        {
+          padding: state.saved.padding,
+          backgroundColor: state.saved.backgroundColor,
+          boxShadow: state.saved.boxShadow
+        },
+        state.saved.borderRadius,
+        document.body,
+        FLIGHT_Z_OPEN
+      );
+
+      await animateFlight(liveNode, OPEN_MS, VIEWER_DECORATION, state.saved.borderRadius);
+      clearFlightStyles(liveNode, true);
+      mountLoadedImgToStage(liveNode);
+
+      if (!(liveNode.complete && liveNode.naturalWidth)) {
+        const pre = createStagePreloader(viewerRect, aspectRatio);
+        stage.insertBefore(pre, liveNode);
+        liveNode.style.opacity = "0";
+        waitForImageReady(liveNode).then(() => {
+          liveNode.style.transition = `opacity 220ms ${EASE}`;
+          liveNode.style.opacity = "1";
+          pre.classList.add("img-preloader-fade-out");
+          setTimeout(() => pre.remove(), 220);
+        }).catch(() => {
+          pre.classList.add("img-preloader-error");
+        });
+      }
+      return;
+    }
+
+    if (liveNode instanceof HTMLElement && liveNode.classList.contains("img-preloader")) {
+      const savedRect = liveNode.getBoundingClientRect();
+      state.articleOriginalNode = liveNode;
+      state.saved = { rect: { left: savedRect.left, top: savedRect.top, width: savedRect.width, height: savedRect.height } };
+      state.placeholder = createPlaceholderForNode(liveNode, aspectRatio);
+      liveNode.replaceWith(state.placeholder);
+
+      const flight = liveNode.cloneNode(true);
+      flight.classList.add("image-viewer-img-preloader");
+      flight.style.width = `${viewerRect.width}px`;
+      flight.style.height = `${viewerRect.height}px`;
+      flight.style.aspectRatio = `${aspectRatio}`;
+
+      setGenericFlightStyles(flight, viewerRect, state.saved.rect, FLIGHT_Z_OPEN);
+      await animateGenericFlight(flight, OPEN_MS);
+      clearFixedStyles(flight);
+      mountPreloaderToStage(flight);
+
+      requestImageBySrc(item.src, item.alt).then((loadedImg) => {
+        if (!state.isOpen) return;
+        loadedImg.classList.add("img-preloader-loaded");
+        mountLoadedImgToStage(loadedImg);
+      }).catch(() => {
+        flight.classList.add("img-preloader-error");
+      });
+    }
+  };
+
+  async function open(node) {
+    if (state.isOpen || state.isAnimating) return;
+    state.isOpen = state.isAnimating = true;
+
+    const clickNode = (node instanceof HTMLElement ? (node.closest(".img-preloader") || node) : null);
+    state.contextRoot = getContextRoot(clickNode);
+    state.items = collectItems(state.contextRoot);
+    state.currentIndex = findItemIndexByNodeOrSrc(state.items, clickNode);
+    if (state.currentIndex < 0) {
+      state.isOpen = state.isAnimating = false;
+      return;
+    }
+
+    document.documentElement.style.overflow = "hidden";
+    state.fixedHidden = shouldHideFixedElements();
+    if (state.fixedHidden) hideFixedElements();
+
+    stage.innerHTML = "";
+    maskDom.style.zIndex = "";
+    maskDom.classList.remove("switching");
+    maskDom.classList.add("active");
+    hideSwitcher();
+    updateSwitcher();
+
+    await openItemAtIndex(state.currentIndex, clickNode);
+
+    state.isAnimating = false;
+    document.addEventListener("keydown", onKeydown);
+    scheduleShowSwitcher();
+  }
+
+  async function close() {
+    if (!state.isOpen || state.isAnimating) return;
+    if (!state.activeEl || !state.placeholder) return;
+
+    state.isAnimating = true;
+    document.removeEventListener("keydown", onKeydown);
+    hideSwitcher();
+    maskDom.classList.remove("switching");
+
+    const el = state.activeEl;
+    const ph = state.placeholder;
+
+    if (state.articleOriginalNode instanceof HTMLImageElement && el === state.articleOriginalNode) {
+      const img = el;
+      const cs = getComputedStyle(img);
+      const fromRect = img.getBoundingClientRect();
+      const phRect = ph.getBoundingClientRect();
+      const toRect = { left: phRect.left, top: phRect.top, width: phRect.width, height: phRect.height };
+      const dx = fromRect.left - toRect.left;
+      const dy = fromRect.top - toRect.top;
+      const sx = fromRect.width / toRect.width;
+      const sy = fromRect.height / toRect.height;
+
+      const targetDecoration = {
+        padding: state.saved?.padding ?? "0",
+        backgroundColor: state.saved?.backgroundColor ?? "transparent",
+        boxShadow: state.saved?.boxShadow ?? "none"
+      };
+
+      maskDom.style.zIndex = String(MASK_Z_CLOSE);
+
+      img.style.cssText = `
+        position:fixed;
+        left:${toRect.left}px;
+        top:${toRect.top}px;
+        width:${toRect.width}px;
+        height:${toRect.height}px;
+        border-radius:${cs.borderRadius};
+        box-sizing:border-box;
+        padding:${cs.padding};
+        background-color:${cs.backgroundColor};
+        box-shadow:${cs.boxShadow};
+        margin:0;
+        max-width:none;
+        max-height:none;
+        z-index:${FLIGHT_Z_CLOSE};
+        pointer-events:none;
+        transform-origin:top left;
+        will-change:transform,opacity;
+        transition:none;
+        transform:translate(${dx}px, ${dy}px) scale(${sx}, ${sy});
+        animation:none;
+      `;
+      img.classList.remove("img-preloader-loaded");
+      document.body.appendChild(img);
+      stage.innerHTML = "";
+      maskDom.classList.remove("active");
+
+      await animateFlight(img, CLOSE_MS, targetDecoration, state.saved?.borderRadius);
+
+      clearFlightStyles(img, false);
+      restoreOriginal(img, state.saved);
+      ph.replaceWith(img);
+    } else {
+      const fromRect = el.getBoundingClientRect();
+      const phRect = ph.getBoundingClientRect();
+      const toRect = { left: phRect.left, top: phRect.top, width: phRect.width, height: phRect.height };
+      const dx = fromRect.left - toRect.left;
+      const dy = fromRect.top - toRect.top;
+      const sx = fromRect.width / toRect.width;
+      const sy = fromRect.height / toRect.height;
+
+      maskDom.style.zIndex = String(MASK_Z_CLOSE);
+
+      const cs = getComputedStyle(el);
+      el.style.cssText = `
+        position:fixed;
+        left:${toRect.left}px;
+        top:${toRect.top}px;
+        width:${toRect.width}px;
+        height:${toRect.height}px;
+        border-radius:${cs.borderRadius};
+        box-sizing:border-box;
+        padding:${cs.padding};
+        background-color:${cs.backgroundColor};
+        box-shadow:${cs.boxShadow};
+        margin:0;
+        max-width:none;
+        max-height:none;
+        z-index:${FLIGHT_Z_CLOSE};
+        pointer-events:none;
+        transform-origin:top left;
+        will-change:transform,opacity;
+        transition:none;
+        transform:translate(${dx}px, ${dy}px) scale(${sx}, ${sy});
+        opacity:1;
+        animation:none;
+      `;
+      document.body.appendChild(el);
+      stage.innerHTML = "";
+      maskDom.classList.remove("active");
+
+      await nextFrame();
+      await nextFrame();
+      el.style.transition = `transform ${CLOSE_MS}ms ${EASE}, opacity ${CLOSE_MS}ms ${EASE}`;
+      el.style.transform = "translate(0, 0) scale(1, 1)";
+      await new Promise(resolve => setTimeout(resolve, CLOSE_MS + 80));
+      el.remove();
+
+      if (state.articleOriginalNode instanceof HTMLElement) {
+        ph.replaceWith(state.articleOriginalNode);
+      }
+    }
+
     document.documentElement.style.overflow = "";
     if (state.fixedHidden) {
       showFixedElements(300); // 300ms delay as requested
       state.fixedHidden = false;
     }
 
-    state.activeImg = state.placeholder = state.saved = null;
+    state.activeImg = state.activeEl = null;
+    state.articleOriginalNode = null;
+    state.placeholder = null;
+    state.saved = null;
     state.pointers.clear(); state.pinchStart = null;
     state.isOpen = state.isAnimating = false;
 
-    // Restore mask stacking for next open
     maskDom.style.zIndex = "";
   }
 
   async function navigate(delta) {
     if (!state.isOpen || state.items.length <= 1 || state.isAnimating) return;
     const nextIndex = (state.currentIndex + delta + state.items.length) % state.items.length;
-    const nextImg = state.items[nextIndex];
-    if (!nextImg || !isViewableImg(nextImg)) return;
-    state.currentIndex = nextIndex;
-    await close(); await nextFrame(); await open(nextImg);
+    await switchToIndex(nextIndex);
+  }
+
+  async function switchToIndex(targetIndex) {
+    if (!state.isOpen || state.isAnimating) return;
+    if (targetIndex === state.currentIndex) return;
+    const nextItem = state.items[targetIndex];
+    if (!nextItem) return;
+
+    const direction = targetIndex > state.currentIndex ? -1 : 1;
+    const SWITCH_MS = 420;
+    const OVERLAP_MS = Math.round(SWITCH_MS / 2);
+
+    state.isAnimating = true;
+    hideSwitcher();
+    maskDom.classList.add("switching");
+
+    const outgoingEl = state.activeEl;
+    const outgoingPlaceholder = state.placeholder;
+    const outgoingOriginal = state.articleOriginalNode;
+    const outgoingSaved = state.saved;
+    const outgoingFromRect = outgoingEl.getBoundingClientRect();
+
+    stage.innerHTML = "";
+    setFixedAtRect(outgoingEl, outgoingFromRect, FLIGHT_Z_OPEN);
+    document.body.appendChild(outgoingEl);
+
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const currentCenterY = outgoingFromRect.top + outgoingFromRect.height / 2;
+    const dy = (vh / 2) - currentCenterY;
+    const exitX = direction < 0
+      ? -(outgoingFromRect.left + outgoingFromRect.width + 40)
+      : (vw - outgoingFromRect.left + 40);
+
+    await nextFrame();
+    await nextFrame();
+    outgoingEl.style.transition = `transform ${SWITCH_MS}ms ${EASE}, opacity ${SWITCH_MS}ms ${EASE}`;
+    outgoingEl.style.transform = `translate(${exitX}px, ${dy}px) scale(0.6, 0.6)`;
+    outgoingEl.style.opacity = "0";
+
+    setTimeout(async () => {
+      if (!state.isOpen) return;
+      state.currentIndex = targetIndex;
+      updateSwitcherActive();
+
+      const liveNode = getLiveNodeForItem(nextItem);
+      const aspectRatio = getNodeAspectRatio(liveNode, nextItem);
+      const viewerRect = (liveNode instanceof HTMLImageElement && liveNode.naturalWidth && liveNode.naturalHeight)
+        ? computeViewerRect(liveNode)
+        : computeViewerRectFromAspect(aspectRatio);
+
+      state.scale = 1; state.translateX = state.translateY = 0;
+      state.pointers.clear(); state.pinchStart = null; state.isDragging = false;
+
+      let incomingEl;
+      if (liveNode instanceof HTMLImageElement) {
+        if (liveNode.complete && liveNode.naturalWidth) {
+          const ghostRect = liveNode.getBoundingClientRect();
+          const ghostImg = liveNode.cloneNode(false);
+          if (ghostImg instanceof HTMLImageElement) {
+            ghostImg.classList.add("image-viewer-article-fade-out");
+            ghostImg.src = liveNode.currentSrc || liveNode.src;
+            ghostImg.style.cssText = `
+              position:fixed;
+              left:${ghostRect.left}px;
+              top:${ghostRect.top}px;
+              width:${ghostRect.width}px;
+              height:${ghostRect.height}px;
+              margin:0;
+              z-index:${MASK_Z_CLOSE};
+              pointer-events:none;
+            `;
+            document.body.appendChild(ghostImg);
+            setTimeout(() => ghostImg.remove(), 260);
+          }
+        }
+
+        state.saved = saveOriginal(liveNode);
+        state.articleOriginalNode = liveNode;
+        state.placeholder = createPlaceholderForNode(liveNode, aspectRatio);
+        liveNode.before(state.placeholder);
+        incomingEl = liveNode;
+        setFlightStyles(
+          incomingEl,
+          viewerRect,
+          viewerRect,
+          VIEWER_DECORATION,
+          state.saved.borderRadius,
+          document.body,
+          FLIGHT_Z_OPEN
+        );
+        incomingEl.style.transform = direction < 0
+          ? `translate(${vw - viewerRect.left + 40}px, 0px) scale(0.6, 0.6)`
+          : `translate(${-(viewerRect.left + viewerRect.width + 40)}px, 0px) scale(0.6, 0.6)`;
+        incomingEl.style.opacity = "0";
+        await nextFrame();
+        incomingEl.style.transition = `transform ${SWITCH_MS}ms ${EASE}, opacity ${SWITCH_MS}ms ${EASE}`;
+        incomingEl.style.opacity = "1";
+        incomingEl.style.transform = "translate(0, 0) scale(1, 1)";
+        await new Promise(resolve => setTimeout(resolve, SWITCH_MS + 80));
+        clearFlightStyles(incomingEl, true);
+        mountLoadedImgToStage(incomingEl);
+
+        if (!(incomingEl.complete && incomingEl.naturalWidth)) {
+          const pre = createStagePreloader(viewerRect, aspectRatio);
+          stage.insertBefore(pre, incomingEl);
+          incomingEl.style.opacity = "0";
+          waitForImageReady(incomingEl).then(() => {
+            incomingEl.style.transition = `opacity 220ms ${EASE}`;
+            incomingEl.style.opacity = "1";
+            pre.classList.add("img-preloader-fade-out");
+            setTimeout(() => pre.remove(), 220);
+          }).catch(() => {
+            pre.classList.add("img-preloader-error");
+          });
+        }
+      } else if (liveNode instanceof HTMLElement && liveNode.classList.contains("img-preloader")) {
+        const ghostRect = liveNode.getBoundingClientRect();
+        const ghost = liveNode.cloneNode(true);
+        if (ghost instanceof HTMLElement) {
+          ghost.classList.add("image-viewer-article-fade-out");
+          ghost.style.cssText = `
+            position:fixed;
+            left:${ghostRect.left}px;
+            top:${ghostRect.top}px;
+            width:${ghostRect.width}px;
+            height:${ghostRect.height}px;
+            margin:0;
+            z-index:${MASK_Z_CLOSE};
+            pointer-events:none;
+          `;
+          document.body.appendChild(ghost);
+          setTimeout(() => ghost.remove(), 260);
+        }
+
+        const savedRect = liveNode.getBoundingClientRect();
+        state.articleOriginalNode = liveNode;
+        state.saved = { rect: { left: savedRect.left, top: savedRect.top, width: savedRect.width, height: savedRect.height } };
+        state.placeholder = createPlaceholderForNode(liveNode, aspectRatio);
+        liveNode.replaceWith(state.placeholder);
+
+        const incomingPre = createStagePreloader(viewerRect, aspectRatio);
+        setGenericFlightStyles(incomingPre, viewerRect, viewerRect, FLIGHT_Z_OPEN);
+        incomingPre.style.transform = direction < 0
+          ? `translate(${vw - viewerRect.left + 40}px, 0px) scale(0.6, 0.6)`
+          : `translate(${-(viewerRect.left + viewerRect.width + 40)}px, 0px) scale(0.6, 0.6)`;
+        incomingPre.style.opacity = "0";
+        await nextFrame();
+        incomingPre.style.transition = `transform ${SWITCH_MS}ms ${EASE}, opacity ${SWITCH_MS}ms ${EASE}`;
+        incomingPre.style.opacity = "1";
+        incomingPre.style.transform = "translate(0, 0) scale(1, 1)";
+        await new Promise(resolve => setTimeout(resolve, SWITCH_MS + 80));
+        clearFixedStyles(incomingPre);
+        mountPreloaderToStage(incomingPre);
+
+        requestImageBySrc(nextItem.src, nextItem.alt).then((loadedImg) => {
+          if (!state.isOpen || state.currentIndex !== targetIndex) return;
+          loadedImg.classList.add("img-preloader-loaded");
+          mountLoadedImgToStage(loadedImg);
+        }).catch(() => {
+          incomingPre.classList.add("img-preloader-error");
+        });
+      }
+
+      const anchor = state.placeholder;
+      if (anchor) {
+        const y = anchor.getBoundingClientRect().top + window.scrollY;
+        const top = Math.max(0, y - window.innerHeight * 0.2);
+        try { window.scrollTo({ top, behavior: "smooth" }); } catch { window.scrollTo(0, top); }
+      }
+    }, OVERLAP_MS);
+
+    setTimeout(() => {
+      if (outgoingOriginal instanceof HTMLImageElement) {
+        clearFlightStyles(outgoingEl, false);
+        restoreOriginal(outgoingOriginal, outgoingSaved);
+        outgoingPlaceholder?.replaceWith(outgoingOriginal);
+        outgoingOriginal.classList.add("image-viewer-article-fade-in");
+        setTimeout(() => outgoingOriginal.classList.remove("image-viewer-article-fade-in"), 260);
+      } else if (outgoingOriginal instanceof HTMLElement) {
+        outgoingEl.remove();
+        outgoingPlaceholder?.replaceWith(outgoingOriginal);
+        outgoingOriginal.classList.add("image-viewer-article-fade-in");
+        setTimeout(() => outgoingOriginal.classList.remove("image-viewer-article-fade-in"), 260);
+      } else {
+        outgoingEl.remove();
+      }
+    }, SWITCH_MS);
+
+    await new Promise(resolve => setTimeout(resolve, SWITCH_MS + OVERLAP_MS + 120));
+    maskDom.classList.remove("switching");
+    state.isAnimating = false;
+    scheduleShowSwitcher();
   }
 
   global.api = { open, close, isOpen: () => state.isOpen };
+
+  switcherPrev.onclick = () => navigate(-1);
+  switcherNext.onclick = () => navigate(1);
+  switcherSidePrev.onclick = () => navigate(-1);
+  switcherSideNext.onclick = () => navigate(1);
+  switcherPages.onclick = (e) => {
+    if (!state.isOpen || state.isAnimating) return;
+    const btn = e.target?.closest?.(".image-viewer-switcher-page");
+    if (!(btn instanceof HTMLElement)) return;
+    const idx = Number(btn.dataset.index || "-1");
+    if (!Number.isFinite(idx) || idx < 0 || idx >= state.items.length) return;
+    switchToIndex(idx);
+  };
 
   if (!global.docBound) {
     global.handlers.onDocClick = e => {
       const api = global.api;
       if (!api || api.isOpen()) return;
       const t = e.target;
-      if (!(t instanceof HTMLImageElement) || !t.matches(VIEWABLE_IMG_SELECTOR) || !isViewableImg(t)) return;
-      api.open(t);
+      if (t instanceof HTMLImageElement) {
+        if (!t.matches(VIEWABLE_IMG_SELECTOR) || !isViewableImg(t)) return;
+        api.open(t);
+        return;
+      }
+      const pre = t?.closest?.(".img-preloader");
+      if (!(pre instanceof HTMLElement) || !isViewablePreloader(pre)) return;
+      if (!pre.closest(".markdown-body, .masonry-item, #shuoshuo-content")) return;
+      api.open(pre);
     };
     document.addEventListener("click", global.handlers.onDocClick, true);
     global.docBound = true;

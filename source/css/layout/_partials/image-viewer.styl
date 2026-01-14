@@ -42,6 +42,11 @@
               -webkit-backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1),
               visibility 0ms linear 0ms
 
+  &.switching
+    background rgba(0, 0, 0, 0.45)
+    backdrop-filter blur(20px)
+    -webkit-backdrop-filter blur(20px)
+
   &.is-interacting
     .image-viewer-stage
       transition none
@@ -88,3 +93,156 @@
   box-shadow 0 18px 60px rgba(0, 0, 0, 0.35)
 
   transition opacity 220ms cubic-bezier(0.22, 1, 0.36, 1)
+
+
+.image-viewer-stage .image-viewer-img-preloader
+  max-width 92vw
+  max-height 92vh
+  margin 0
+  border-radius $usr-img-border-radius
+  background var(--background-color)
+  padding 2px
+  box-sizing border-box
+  box-shadow 0 18px 60px rgba(0, 0, 0, 0.35)
+
+  .img-preloader-skeleton
+    border-radius $usr-img-border-radius
+
+
+.image-viewer-switcher
+  position fixed
+  left 50%
+  bottom calc(env(safe-area-inset-bottom) + 18px)
+  transform translateX(-50%) translateY(10px) scale(0.98)
+  z-index $z-index-8 + 1
+  display flex
+  align-items center
+  justify-content center
+  gap 0.3rem
+  opacity 0
+  visibility hidden
+  pointer-events none
+  will-change opacity, transform
+
+  &.shown
+    opacity 1
+    visibility visible
+    pointer-events auto
+    transform translateX(-50%) translateY(0px) scale(1)
+    animation image-viewer-switcher-fade-in 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards
+
+  +redefine-mobile()
+    bottom calc(env(safe-area-inset-bottom) + 12px)
+
+
+.image-viewer-switcher-pages
+  display flex
+  align-items center
+  gap 0.3rem
+  max-width min(92vw, 680px)
+  overflow-x auto
+  overflow-y hidden
+  scrollbar-width none
+  -ms-overflow-style none
+  padding 0 2px
+
+  &::-webkit-scrollbar
+    display none
+
+
+.image-viewer-switcher-btn, .image-viewer-switcher-page, .image-viewer-switcher-side
+  display inline-flex
+  align-items center
+  justify-content center
+  cursor pointer
+  border-radius $redefine-border-radius-small
+  background var(--background-color)
+  color var(--default-text-color)
+  width 38px
+  height 38px
+  padding 0
+  line-height 1
+  user-select none
+  box-sizing border-box
+  hover-style(
+    true,
+    1.06,
+    1.06
+  )
+
+  &:hover
+    color var(--background-color)
+    background var(--primary-color)
+
+  &:active
+    transform scale(0.95)
+    transition transform 0.1s ease
+
+  &.active
+    color var(--background-color)
+    background var(--primary-color)
+
+
+.image-viewer-switcher-page
+  font-variant-numeric tabular-nums
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+
+.image-viewer-switcher-btn
+  display none
+
+  +redefine-mobile()
+    display inline-flex
+
+
+.image-viewer-switcher-side
+  position fixed
+  top 50%
+  transform translateY(-50%)
+  z-index $z-index-8 + 1
+  opacity 0
+  visibility hidden
+  pointer-events none
+  will-change opacity, transform
+
+  &.shown
+    opacity 1
+    visibility visible
+    pointer-events auto
+    animation image-viewer-switcher-fade-in 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards
+
+  &.prev
+    left 18px
+  &.next
+    right 18px
+
+  +redefine-mobile()
+    display none
+
+
+@keyframes image-viewer-switcher-fade-in
+  from
+    opacity 0
+  to
+    opacity 1
+
+
+.image-viewer-article-fade-in
+  animation image-viewer-article-fade-in 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards
+
+.image-viewer-article-fade-out
+  animation image-viewer-article-fade-out 180ms cubic-bezier(0.22, 1, 0.36, 1) forwards
+
+@keyframes image-viewer-article-fade-in
+  from
+    opacity 0
+  to
+    opacity 1
+
+@keyframes image-viewer-article-fade-out
+  from
+    opacity 1
+  to
+    opacity 0
