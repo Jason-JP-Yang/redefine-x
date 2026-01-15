@@ -454,10 +454,16 @@ export default function imageViewer() {
   };
 
   const setGenericFlightStyles = (el, targetRect, fromRect, zIndex) => {
+    // Both targetRect and fromRect are border-box dimensions
+    // We want the element to be positioned at fromRect, then transformed to targetRect
+    // But we are setting its style to targetRect (width/height), then translating it to fromRect.
+    
+    // Calculate the transform to go from target position to from position
     const dx = fromRect.left - targetRect.left;
     const dy = fromRect.top - targetRect.top;
     const sx = fromRect.width / targetRect.width;
     const sy = fromRect.height / targetRect.height;
+    
     el.style.cssText = `
       position:fixed;
       left:${targetRect.left}px;
@@ -475,6 +481,13 @@ export default function imageViewer() {
       transform:translate(${dx}px, ${dy}px) scale(${sx}, ${sy});
       opacity:1;
       animation:none;
+      
+      /* Ensure border/padding are included in width/height calculation */
+      box-sizing: border-box; 
+      padding: 2px; /* Match viewer decoration padding */
+      background-color: var(--background-color); /* Match viewer decoration bg */
+      border-radius: ${getComputedStyle(document.documentElement).getPropertyValue('--redefine-border-radius-medium') || '8px'}; /* Approximate radius */
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35); /* Match viewer shadow */
     `;
     document.body.appendChild(el);
   };
@@ -660,8 +673,16 @@ export default function imageViewer() {
       clearFixedStyles(flight);
       mountPreloaderToStage(flight);
 
-      requestImageBySrc(item.src, item.alt).then((loadedImg) => {
+      requestImageBySrc(item.src, item.alt).then(async (loadedImg) => {
         if (!state.isOpen) return;
+
+        // Ensure image is fully decoded and ready to render
+        try {
+          await loadedImg.decode();
+        } catch (e) {
+          // Decode failed, but maybe still usable? proceed anyway
+          console.warn("Image decode failed", e);
+        }
 
         const articleImg = loadedImg;
         transformPreloaderToImage(liveNode, articleImg);
@@ -672,12 +693,6 @@ export default function imageViewer() {
         // Use opacity transition to seamlessly swap preloader -> image
         articleImg.style.opacity = "0";
         articleImg.style.transition = `opacity 220ms ${EASE}`;
-        // Important: preloader is already in stage, we insert image before it
-        // so image is behind, then we fade image in and preloader out? 
-        // No, insert image into stage, hide it, then fade it in.
-        
-        // Better strategy: mount loaded image, but keep preloader on top, then fade preloader out
-        // The current mountLoadedImgToStage clears stage. We need to handle this manually.
         
         // Manually mount image
         stage.appendChild(articleImg);
@@ -691,13 +706,11 @@ export default function imageViewer() {
         constrainVisible();
         
         // Animate swap
-        articleImg.style.opacity = "0";
-        flight.classList.add("img-preloader-fade-out"); // This adds opacity: 0 transition
-        
-        // Force reflow
-        void articleImg.offsetWidth;
+        // Wait one frame to ensure DOM update and opacity:0 applies
+        await nextFrame();
         
         articleImg.style.opacity = "1";
+        flight.classList.add("img-preloader-fade-out"); // This adds opacity: 0 transition
         
         setTimeout(() => {
            flight.remove();
@@ -720,6 +733,19 @@ export default function imageViewer() {
     if (state.currentIndex < 0) {
       state.isOpen = state.isAnimating = false;
       return;
+    }
+
+    // Prevent opening if the clicked node is an unloaded preloader
+    // But allow if we are navigating (which is not this case, this is open())
+    // Wait, requirement says "cannot be clicked to open", but "can be switched to".
+    // open() is only called on click.
+    if (clickNode instanceof HTMLElement && clickNode.classList.contains("img-preloader") && !clickNode.classList.contains("img-preloader-loaded")) {
+       // Check if it's really unloaded (double check with lazyload status?)
+       // The class check is reliable enough as lazyload adds it.
+       // But wait, if we block it here, user can't open it.
+       // Requirement: "没有加载完成成功渲染的照片不可以点击打开image-viewer"
+       state.isOpen = state.isAnimating = false;
+       return;
     }
 
     document.documentElement.style.overflow = "hidden";
