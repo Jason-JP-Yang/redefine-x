@@ -7,6 +7,7 @@ import initScrollTopBottom from "./tools/scrollTopBottom.js";
 import initLocalSearch from "./tools/localSearch.js";
 import initCopyCode from "./tools/codeBlock.js";
 import initBookmarkNav from "./layouts/bookmarkNav.js";
+import initHomeAutoHover from "./layouts/homeAutoHover.js";
 
 export const main = {
   themeInfo: {
@@ -78,6 +79,8 @@ export const main = {
     if (theme.articles.lazyload === true) {
       initLazyLoad();
     }
+
+    initHomeAutoHover();
   },
 };
 
