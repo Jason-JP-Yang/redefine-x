@@ -68,27 +68,10 @@ async function ensureImageCached(src, alt) {
 }
 
 export async function requestImageBySrc(src, alt = "") {
-  if (preloadedImages.has(src)) {
-    const img = preloadedImages.get(src);
-    preloadedImages.delete(src);
-    if (alt) img.alt = alt;
-    return img;
-  }
-  
-  if (inflightLoads.has(src)) {
-    await inflightLoads.get(src);
-    return loadImage(src, alt);
-  }
-  
-  const p = loadImage(src, alt).then((img) => {
-    inflightLoads.delete(src);
-    return img;
-  }).catch((err) => {
-    inflightLoads.delete(src);
-    throw err;
-  });
-  inflightLoads.set(src, p);
-  return p;
+  const img = await ensureImageCached(src, alt);
+  if (alt) img.alt = alt;
+  if (preloadedImages.get(src) === img) preloadedImages.delete(src);
+  return img;
 }
 
 export function transformPreloaderToImage(preloader, img) {

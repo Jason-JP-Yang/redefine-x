@@ -514,6 +514,9 @@ export default function imageViewer() {
   const getLiveNodeForItem = (item) => {
     if (!state.contextRoot) return item.node;
     if (item.kind === "preloader") {
+      const imgs = Array.from(state.contextRoot.querySelectorAll("img"));
+      const imgFound = imgs.find(img => toAbsUrl(img.dataset.originalSrc || img.currentSrc || img.src) === item.absSrc);
+      if (imgFound) return imgFound;
       const pres = Array.from(state.contextRoot.querySelectorAll(".img-preloader"));
       const found = pres.find(p => toAbsUrl(p.dataset.src) === item.absSrc);
       return found || item.node;
@@ -665,7 +668,41 @@ export default function imageViewer() {
         articleImg.classList.remove("img-preloader-fade-out");
         state.articleOriginalNode = articleImg;
         loadedPreloaders.add(liveNode);
-        mountLoadedImgToStage(articleImg);
+        
+        // Use opacity transition to seamlessly swap preloader -> image
+        articleImg.style.opacity = "0";
+        articleImg.style.transition = `opacity 220ms ${EASE}`;
+        // Important: preloader is already in stage, we insert image before it
+        // so image is behind, then we fade image in and preloader out? 
+        // No, insert image into stage, hide it, then fade it in.
+        
+        // Better strategy: mount loaded image, but keep preloader on top, then fade preloader out
+        // The current mountLoadedImgToStage clears stage. We need to handle this manually.
+        
+        // Manually mount image
+        stage.appendChild(articleImg);
+        state.activeImg = articleImg;
+        state.activeEl = articleImg;
+        articleImg.style.cursor = "grab";
+        articleImg.style.touchAction = "none";
+        articleImg.style.width = "";
+        articleImg.style.height = "";
+        applyTransform();
+        constrainVisible();
+        
+        // Animate swap
+        articleImg.style.opacity = "0";
+        flight.classList.add("img-preloader-fade-out"); // This adds opacity: 0 transition
+        
+        // Force reflow
+        void articleImg.offsetWidth;
+        
+        articleImg.style.opacity = "1";
+        
+        setTimeout(() => {
+           flight.remove();
+        }, 220);
+
       }).catch(() => {
         flight.classList.add("img-preloader-error");
       });
@@ -892,27 +929,6 @@ export default function imageViewer() {
 
       let incomingEl;
       if (liveNode instanceof HTMLImageElement) {
-        if (liveNode.complete && liveNode.naturalWidth) {
-          const ghostRect = liveNode.getBoundingClientRect();
-          const ghostImg = liveNode.cloneNode(false);
-          if (ghostImg instanceof HTMLImageElement) {
-            ghostImg.classList.add("image-viewer-article-fade-out");
-            ghostImg.src = liveNode.currentSrc || liveNode.src;
-            ghostImg.style.cssText = `
-              position:fixed;
-              left:${ghostRect.left}px;
-              top:${ghostRect.top}px;
-              width:${ghostRect.width}px;
-              height:${ghostRect.height}px;
-              margin:0;
-              z-index:${MASK_Z_CLOSE};
-              pointer-events:none;
-            `;
-            document.body.appendChild(ghostImg);
-            setTimeout(() => ghostImg.remove(), 260);
-          }
-        }
-
         state.saved = saveOriginal(liveNode);
         state.articleOriginalNode = liveNode;
         state.placeholder = createPlaceholderForNode(liveNode, aspectRatio);
@@ -953,24 +969,6 @@ export default function imageViewer() {
           });
         }
       } else if (liveNode instanceof HTMLElement && liveNode.classList.contains("img-preloader")) {
-        const ghostRect = liveNode.getBoundingClientRect();
-        const ghost = liveNode.cloneNode(true);
-        if (ghost instanceof HTMLElement) {
-          ghost.classList.add("image-viewer-article-fade-out");
-          ghost.style.cssText = `
-            position:fixed;
-            left:${ghostRect.left}px;
-            top:${ghostRect.top}px;
-            width:${ghostRect.width}px;
-            height:${ghostRect.height}px;
-            margin:0;
-            z-index:${MASK_Z_CLOSE};
-            pointer-events:none;
-          `;
-          document.body.appendChild(ghost);
-          setTimeout(() => ghost.remove(), 260);
-        }
-
         const savedRect = liveNode.getBoundingClientRect();
         state.articleOriginalNode = liveNode;
         state.saved = { rect: { left: savedRect.left, top: savedRect.top, width: savedRect.width, height: savedRect.height } };
