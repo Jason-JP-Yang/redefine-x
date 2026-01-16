@@ -133,11 +133,11 @@ function refreshCandidates() {
   });
 
   const exifFloat = document.querySelectorAll(
-    ".image-exif-container.image-exif-float:not(.image-exif-overflow-fallback)",
+    ".image-exif-container.image-exif-float",
   );
   exifFloat.forEach((container) => {
     // Similarly, look for preloader or img
-    const img = container.querySelector("img.image-exif-img, .img-preloader");
+    const img = container.querySelector("img, .img-preloader");
     if (!img) return;
     candidates.push({ type: "exif-float", element: container, img });
   });
@@ -330,23 +330,9 @@ function installGlobalListeners() {
   );
 
   document.addEventListener(
-    "pointerdown",
-    (event) => {
-      const target = event.target;
-      
-      // Check if clicking on an image that is part of our candidates
-      let clickedImage = false;
-      if (target) {
-        for (const c of state.candidates) {
-          if (c.element.contains(target)) {
-            clickedImage = true;
-            break;
-          }
-        }
-      }
-
-      // If clicking image, long suspend. Else short suspend.
-      const suspendTime = clickedImage ? 10000 : 1500;
+    "click",
+    () => {
+      const suspendTime = 10000;
       
       state.suspendUntil = Date.now() + suspendTime;
       state.hoveringInteractive = false;
