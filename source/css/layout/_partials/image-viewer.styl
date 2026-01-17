@@ -110,6 +110,35 @@
   .img-preloader-skeleton
     border-radius $usr-img-border-radius
 
+  &.img-preloader-error
+    .img-preloader-skeleton
+      position absolute !important
+      width 100% !important
+      height 100% !important
+      top 0
+      left 0
+      padding 0.75rem
+      display flex
+      flex-direction column
+      align-items center
+      justify-content center
+      background var(--third-background-color)
+
+
+.image-viewer-img-preloader.img-preloader-error
+  .img-preloader-skeleton
+      position absolute !important
+      width 100% !important
+      height 100% !important
+      top 0
+      left 0
+      padding 0.75rem
+      display flex
+      flex-direction column
+      align-items center
+      justify-content center
+      background var(--third-background-color)
+
 
 .image-viewer-switcher
   position fixed
@@ -274,3 +303,221 @@
     opacity 1
   to
     opacity 0
+
+.image-viewer-info-trigger
+  position fixed
+  left 50%
+  top calc(env(safe-area-inset-top) + 18px)
+  transform translateX(-50%)
+  z-index $z-index-8 + 2
+  
+  display flex
+  align-items center
+  justify-content center
+  
+  width 38px
+  height 38px
+  border-radius $redefine-border-radius-small
+  background var(--background-color)
+  color var(--default-text-color)
+  box-shadow var(--shadow-1)
+  cursor pointer
+  overflow hidden
+  box-sizing border-box
+  border 1px solid transparent
+  
+  transition width 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             height 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             border-radius 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             background-color 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             -webkit-backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             box-shadow 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             border 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+             transform 160ms cubic-bezier(0.22, 1, 0.36, 1) 0ms
+  
+  i
+    position absolute
+    font-size 1.1rem
+    opacity 1
+    transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms
+    
+  .image-viewer-info-content
+    width 100%
+    opacity 0
+    pointer-events none
+    overflow auto
+    box-sizing border-box
+    transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms
+    
+    &::-webkit-scrollbar
+      width 0
+      
+    figure.image-caption
+      $image-caption-style = hexo-config('articles.style.image_caption')
+
+      if $image-caption-style == 'float'
+        display flex
+        justify-content center
+        width 100%
+        margin 0
+
+        figcaption
+          text-align center
+          font-size 0.9rem
+          color var(--default-text-color)
+          background-color transparent !important
+          padding 5px 10px
+          opacity 1
+          max-width 100%
+          white-space nowrap
+          overflow visible
+          backdrop-filter none !important
+          -webkit-backdrop-filter none !important
+          border-radius $redefine-border-radius-small
+          box-shadow none !important
+      else
+        margin 0
+
+        figcaption
+          margin-top 5px
+          margin-bottom 10px
+          text-align center
+          font-size 0.9rem
+          color var(--third-text-color)
+          white-space nowrap
+          overflow visible
+
+    .image-exif-container
+      margin 0
+      width 100%
+      box-sizing border-box
+      
+      .image-exif-image-wrapper
+        display none
+        
+      .image-exif-info-card
+        width 100%
+        max-width 100%
+        margin-top 0 !important
+
+        background transparent !important
+        backdrop-filter none !important
+        -webkit-backdrop-filter none !important
+        border none !important
+        box-shadow none !important
+        
+        .image-exif-toggle-btn
+          display none !important
+          
+        .image-exif-data
+          height auto !important
+          opacity 1 !important
+          margin-top 0.6rem !important
+          display grid !important
+          grid-template-columns repeat(2, minmax(130px, 1fr)) !important
+          gap 0.5rem !important
+          
+          @media (min-width: 600px)
+             grid-template-columns repeat(4, minmax(130px, 1fr)) !important
+
+      :root.dark &
+        .image-exif-info-card
+          background transparent !important
+          border none !important
+
+    .image-exif-section-title
+       display flex
+       align-items center
+       gap 0.35rem
+       
+       i
+         position static
+         transform none
+         opacity 0.7
+    
+  &:not(.active):not(.no-hover):hover
+    color var(--background-color)
+    background var(--primary-color)
+    transform translateX(-50%) scale(1.06)
+
+  &.active
+    width 90vw
+    max-width 640px
+    border-radius $redefine-border-radius-large
+    background rgba(255, 255, 255, 0.7)
+    backdrop-filter blur(20px) saturate(180%)
+    -webkit-backdrop-filter blur(20px) saturate(180%)
+    box-shadow var(--redefine-box-shadow-flat)
+    cursor default
+
+    transition width 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               height 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               border-radius 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               background-color 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               -webkit-backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               box-shadow 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               border 200ms cubic-bezier(0.22, 1, 0.36, 1) 540ms,
+               transform 160ms cubic-bezier(0.22, 1, 0.36, 1) 0ms
+    
+    :root.dark &
+      background rgba(32, 33, 36, 0.85)
+      border 1px solid rgba(255, 255, 255, 0.1)
+    
+    > i
+      opacity 0
+      transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms
+      
+    .image-viewer-info-content
+      opacity 1
+      pointer-events none
+      transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1) 360ms
+
+  &.active.measuring
+    visibility hidden !important
+    transition none !important
+    width fit-content !important
+    height auto !important
+    opacity 0 !important
+
+  &.active.info-content-ready
+    height fit-content !important
+    width fit-content !important
+    
+    .image-viewer-info-content
+      pointer-events auto
+
+  &.active.closing
+    width 38px
+    border-radius $redefine-border-radius-small
+    background var(--background-color)
+    backdrop-filter blur(0px)
+    -webkit-backdrop-filter blur(0px)
+    box-shadow var(--shadow-1)
+    border 0 solid transparent
+
+    :root.dark &
+      border 0 solid transparent
+
+    transition width 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               height 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               border-radius 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               background-color 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               -webkit-backdrop-filter 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               box-shadow 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               border 360ms cubic-bezier(0.22, 1, 0.36, 1) 180ms,
+               transform 160ms cubic-bezier(0.22, 1, 0.36, 1) 0ms
+
+    > i
+      opacity 1
+      transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1) 360ms
+
+    .image-viewer-info-content
+      opacity 0
+      pointer-events none
+      transition opacity 360ms cubic-bezier(0.22, 1, 0.36, 1) 0ms
+      
+  +redefine-mobile()
+    top calc(env(safe-area-inset-top) + 12px)

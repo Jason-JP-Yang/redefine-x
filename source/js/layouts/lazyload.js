@@ -114,8 +114,10 @@ function showError(preloader, src) {
   if (shim) shim.remove();
 
   preloader.classList.add("img-preloader-error");
-  preloader.style.removeProperty("width");
-  preloader.style.removeProperty("height");
+  // Error state requirements: width 100%, height fit-content to show error message
+  preloader.style.width = "100%";
+  preloader.style.height = "fit-content";
+  
   preloader.style.removeProperty("aspect-ratio");
   preloader.style.removeProperty("max-height");
   preloader.style.removeProperty("max-width");
@@ -130,6 +132,9 @@ function showError(preloader, src) {
       </div>
     `;
   }
+  
+  // Trigger layout update for things like Exif cards
+  window.dispatchEvent(new CustomEvent('redefine:force-exif-check'));
 }
 
 /**

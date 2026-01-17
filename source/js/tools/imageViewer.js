@@ -13,11 +13,15 @@ export default function imageViewer() {
   const switcherNext = switcher?.querySelector(".image-viewer-switcher-btn.next");
   const switcherSidePrev = maskDom?.querySelector(".image-viewer-switcher-side.prev");
   const switcherSideNext = maskDom?.querySelector(".image-viewer-switcher-side.next");
-  if (!maskDom || !stage || !switcher || !switcherPages || !switcherPrev || !switcherNext || !switcherSidePrev || !switcherSideNext) return;
+  const infoTrigger = maskDom?.querySelector(".image-viewer-info-trigger");
+  const infoContent = infoTrigger?.querySelector(".image-viewer-info-content");
+  if (!maskDom || !stage || !switcher || !switcherPages || !switcherPrev || !switcherNext || !switcherSidePrev || !switcherSideNext || !infoTrigger || !infoContent) return;
 
   const VIEWABLE_IMG_SELECTOR = ".markdown-body img, .masonry-item img, #shuoshuo-content img";
   const VIEWABLE_ITEM_SELECTOR = ".markdown-body img, .markdown-body .img-preloader, .masonry-item img, .masonry-item .img-preloader, #shuoshuo-content img, #shuoshuo-content .img-preloader";
   const OPEN_MS = 420, CLOSE_MS = 360, EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+  const PRELOADER_POP_MS = 300;
+  const PRELOADER_POP_EASE = "ease";
   const measureViewerFrame = () => {
     const probe = document.createElement("img");
     probe.alt = "";
@@ -64,6 +68,18 @@ export default function imageViewer() {
   const nextFrame = () => new Promise(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
+
+  const playPreloaderPop = (el) => {
+    if (!el) return;
+    el.classList.add("img-preloader-loaded");
+    el.style.animation = `img-preloader-fade-in ${PRELOADER_POP_MS}ms ${PRELOADER_POP_EASE} forwards`;
+    setTimeout(() => {
+      if (!el.isConnected) return;
+      el.style.animation = "";
+      el.classList.remove("img-preloader-loaded"); // Ensure class is removed to stop 'forwards' animation override
+      applyTransform();
+    }, PRELOADER_POP_MS + 40);
+  };
 
   /**
    * Hide fixed elements (side-tools, aplayer) during viewer open.
@@ -173,7 +189,10 @@ export default function imageViewer() {
     switcherShowTimer: null,
     scale: 1, translateX: 0, translateY: 0, isDragging: false,
     dragStartX: 0, dragStartY: 0, pointers: new Map(), pinchStart: null,
-    fixedHidden: false
+    fixedHidden: false,
+    infoStatus: "closed",
+    infoTimer: null,
+    infoReadyTimer: null
   };
 
   const applyTransform = () => state.activeImg && 
@@ -488,7 +507,19 @@ export default function imageViewer() {
 
   const setViewerPreloaderError = (preloader, src = "") => {
     if (!(preloader instanceof HTMLElement)) return;
+    const rect = preloader.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      preloader.style.width = `${rect.width}px`;
+      preloader.style.height = `${rect.height}px`;
+      preloader.style.aspectRatio = `${rect.width / rect.height}`;
+      preloader.style.maxWidth = "none";
+      preloader.style.maxHeight = "none";
+    }
     preloader.classList.add("img-preloader-error");
+    // Do NOT force width/height for viewer error state.
+    // It should respect the size/aspect-ratio set by createStagePreloader/setFlightStyles
+    // to match the original image proportions.
+    
     const skeleton = preloader.querySelector(".img-preloader-skeleton");
     if (!skeleton) return;
     skeleton.innerHTML = `
@@ -638,8 +669,13 @@ export default function imageViewer() {
     const totalPages = state.items.length;
     if (totalPages <= 1) {
       switcherPages.style.display = "none";
+      switcherSidePrev.style.display = "none";
+      switcherSideNext.style.display = "none";
       return;
     }
+    // Ensure they are visible if we have multiple pages (revert display:none)
+    switcherSidePrev.style.display = "";
+    switcherSideNext.style.display = "";
 
     const switcherGap = parseFloat(getComputedStyle(switcher).gap || "0") || 0;
     const pagesGap = parseFloat(getComputedStyle(switcherPages).gap || "0") || 0;
@@ -786,8 +822,8 @@ export default function imageViewer() {
     }, 300);
   };
 
-  const mountLoadedImgToStage = (img) => {
-    stage.innerHTML = "";
+  const mountLoadedImgToStage = (img, clear = true) => {
+    if (clear) stage.innerHTML = "";
     img.classList.remove("img-preloader-loaded");
     img.style.animation = "";
     stage.appendChild(img);
@@ -806,6 +842,205 @@ export default function imageViewer() {
     stage.appendChild(pre);
     state.activeImg = null;
     state.activeEl = pre;
+  };
+
+  const INFO_MS = 360;
+  const INFO_TOTAL_MS = INFO_MS * 2;
+
+  const resetInfoInstant = () => {
+    if (state.infoTimer) {
+      clearTimeout(state.infoTimer);
+      state.infoTimer = null;
+    }
+    if (state.infoReadyTimer) {
+      clearTimeout(state.infoReadyTimer);
+      state.infoReadyTimer = null;
+    }
+    infoTrigger.classList.remove("active", "closing", "no-hover", "info-content-ready");
+    infoTrigger.style.height = "";
+    state.infoStatus = "closed";
+  };
+
+  const measureInfoSize = () => {
+    // Temporarily apply measuring class to get dimensions
+    // We use .measuring to force display:block, visibility:hidden, opacity:0, fit-content, auto
+    infoTrigger.classList.add("active", "measuring");
+    infoContent.style.display = "block";
+    
+    const w = infoTrigger.offsetWidth;
+    const h = infoTrigger.offsetHeight;
+    
+    infoTrigger.classList.remove("active", "measuring");
+    infoContent.style.display = "";
+    
+    return { w, h };
+  };
+
+  const openInfo = () => {
+    if (infoTrigger.style.display === "none") return;
+    if (state.infoTimer) {
+      clearTimeout(state.infoTimer);
+      state.infoTimer = null;
+    }
+    if (state.infoReadyTimer) {
+      clearTimeout(state.infoReadyTimer);
+      state.infoReadyTimer = null;
+    }
+
+    // 1. Measure target dimensions
+    const target = measureInfoSize();
+
+    infoTrigger.classList.remove("closing");
+    infoTrigger.classList.remove("info-content-ready");
+    infoTrigger.classList.add("no-hover");
+    infoTrigger.style.height = "38px";
+    infoTrigger.style.width = "38px"; // Start width
+    void infoTrigger.offsetWidth; // Force reflow
+    
+    infoTrigger.classList.add("active");
+    
+    // 2. Set target dimensions for animation
+    infoContent.style.display = "block";
+    infoTrigger.style.width = `${target.w}px`;
+    infoTrigger.style.height = `${target.h}px`;
+    
+    state.infoStatus = "opening";
+    state.infoReadyTimer = setTimeout(() => {
+      if (!infoTrigger.classList.contains("active")) return;
+      if (infoTrigger.classList.contains("closing")) return;
+      infoTrigger.classList.add("info-content-ready");
+      // 3. Switch to auto/fit-content
+      infoTrigger.style.height = "auto";
+      infoTrigger.style.width = "fit-content";
+      state.infoReadyTimer = null;
+    }, INFO_MS);
+    state.infoTimer = setTimeout(() => {
+      state.infoStatus = "open";
+      state.infoTimer = null;
+    }, INFO_TOTAL_MS);
+  };
+
+  const closeInfo = () => {
+    if (!infoTrigger.classList.contains("active")) return;
+    if (infoTrigger.classList.contains("closing")) return;
+    if (state.infoTimer) {
+      clearTimeout(state.infoTimer);
+      state.infoTimer = null;
+    }
+    if (state.infoReadyTimer) {
+      clearTimeout(state.infoReadyTimer);
+      state.infoReadyTimer = null;
+    }
+
+    // Capture current dimensions before removing auto/fit-content class
+    const w = infoTrigger.offsetWidth;
+    const h = infoTrigger.offsetHeight;
+
+    infoTrigger.classList.remove("info-content-ready");
+    
+    // Set explicit pixel values to allow transition
+    infoTrigger.style.width = `${w}px`;
+    infoTrigger.style.height = `${h}px`;
+    void infoTrigger.offsetWidth; // Force reflow
+
+    infoTrigger.classList.add("no-hover");
+    infoTrigger.classList.add("closing");
+    
+    // Transition to closed size
+    infoTrigger.style.width = "38px";
+    infoTrigger.style.height = "38px";
+    
+    state.infoStatus = "closing";
+    state.infoTimer = setTimeout(() => {
+      infoTrigger.classList.remove("active", "closing", "no-hover", "info-content-ready");
+      infoTrigger.style.height = "";
+      infoTrigger.style.width = "";
+      state.infoStatus = "closed";
+      state.infoTimer = null;
+    }, INFO_TOTAL_MS);
+  };
+
+  const updateInfo = () => {
+    const wasOpen = infoTrigger.classList.contains("active") && !infoTrigger.classList.contains("closing");
+    infoContent.innerHTML = "";
+    infoTrigger.style.display = "none";
+    if (!wasOpen) resetInfoInstant();
+
+    const item = state.items[state.currentIndex];
+    if (!item) return;
+
+    const liveNode = getLiveNodeForItem(item);
+    if (!liveNode) return;
+
+    let hasInfo = false;
+
+    const exifContainer = liveNode.closest(".image-exif-container");
+    if (exifContainer) {
+       const infoCard = exifContainer.querySelector(".image-exif-info-card");
+       if (infoCard) {
+           const wrap = document.createElement("div");
+           wrap.className = "image-exif-container image-exif-block";
+
+           const clone = infoCard.cloneNode(true);
+           clone.classList.add("expanded");
+           clone.querySelectorAll(".image-exif-toggle-btn").forEach((btn) => btn.remove());
+           clone.querySelectorAll(".image-exif-data").forEach((data) => {
+             data.style.removeProperty("height");
+             data.style.removeProperty("opacity");
+             data.style.removeProperty("margin-top");
+           });
+           wrap.appendChild(clone);
+           infoContent.appendChild(wrap);
+           hasInfo = true;
+       }
+    }
+
+    if (!hasInfo) {
+      const figure = liveNode.closest("figure.image-caption");
+      if (figure) {
+        const figcaption = figure.querySelector("figcaption");
+        if (figcaption && figcaption.textContent.trim()) {
+          const wrap = document.createElement("figure");
+          wrap.className = "image-caption";
+          wrap.appendChild(figcaption.cloneNode(true));
+          infoContent.appendChild(wrap);
+          hasInfo = true;
+        }
+      }
+    }
+
+    if (!hasInfo && item.alt && item.alt.trim()) {
+      const wrap = document.createElement("figure");
+      wrap.className = "image-caption";
+      const figcaption = document.createElement("figcaption");
+      figcaption.textContent = item.alt;
+      wrap.appendChild(figcaption);
+      infoContent.appendChild(wrap);
+      hasInfo = true;
+    }
+
+    if (!hasInfo) {
+      resetInfoInstant();
+      infoTrigger.style.display = "none";
+      return;
+    }
+
+    infoTrigger.style.display = "flex";
+    if (wasOpen) {
+      // If already open, just update dimensions
+      const target = measureInfoSize();
+      infoTrigger.style.width = `${target.w}px`;
+      infoTrigger.style.height = `${target.h}px`;
+      // We don't need to force reflow or transition if we are just updating content while open
+      // Actually, since we are in "fit-content" mode (info-content-ready), CSS handles it automatically?
+      // Yes, if info-content-ready is set, width/height are fit-content/auto !important in CSS.
+      // But if we are mid-animation or something, might be tricky.
+      // If fully open, CSS rules take precedence, so no JS needed.
+      // BUT we removed !important from width/height in previous steps? 
+      // Wait, the CSS uses !important for fit-content.
+      // So setting style.width/height here does nothing if .info-content-ready is active.
+      // That's correct behavior.
+    }
   };
 
   const openItemAtIndex = async (index, triggerNode) => {
@@ -853,12 +1088,21 @@ export default function imageViewer() {
         try { await liveNode.decode(); } catch {}
         await nextFrame();
 
-        pre.remove();
-        mountLoadedImgToStage(liveNode);
-        liveNode.style.opacity = "0";
-        await nextFrame();
-        liveNode.style.transition = `opacity 220ms ${EASE}`;
-        liveNode.style.opacity = "1";
+        // Smooth transition: keep preloader, mount image hidden, then cross-fade
+        pre.style.position = "absolute";
+        pre.style.left = "50%";
+        pre.style.top = "50%";
+        pre.style.transform = "translate(-50%, -50%)";
+
+        mountLoadedImgToStage(liveNode, false); // false = don't clear stage (keep preloader)
+        
+        playPreloaderPop(liveNode);
+        
+        setTimeout(() => {
+          pre.remove();
+          // Clean up transition property to avoid interfering with drag/zoom later
+          liveNode.style.transition = "";
+        }, PRELOADER_POP_MS);
       }).catch(() => {
         setViewerPreloaderError(pre, item.src);
       });
@@ -867,8 +1111,12 @@ export default function imageViewer() {
 
     if (liveNode instanceof HTMLElement && liveNode.classList.contains("img-preloader")) {
       const savedRect = liveNode.getBoundingClientRect();
+      const isErrorPreloader = liveNode.classList.contains("img-preloader-error");
+      const flightRect = isErrorPreloader
+        ? { left: savedRect.left, top: savedRect.top, width: savedRect.width, height: savedRect.width / aspectRatio }
+        : savedRect;
       state.articleOriginalNode = liveNode;
-      state.saved = { rect: { left: savedRect.left, top: savedRect.top, width: savedRect.width, height: savedRect.height } };
+      state.saved = { rect: { left: flightRect.left, top: flightRect.top, width: flightRect.width, height: flightRect.height } };
       state.placeholder = createPlaceholderForNode(liveNode, aspectRatio);
       liveNode.replaceWith(state.placeholder);
 
@@ -898,10 +1146,7 @@ export default function imageViewer() {
         
         flight.remove();
         mountLoadedImgToStage(articleImg);
-        articleImg.style.opacity = "0";
-        await nextFrame();
-        articleImg.style.transition = `opacity 220ms ${EASE}`;
-        articleImg.style.opacity = "1";
+        playPreloaderPop(articleImg);
 
       }).catch(() => {
         setViewerPreloaderError(flight, item.src);
@@ -945,6 +1190,7 @@ export default function imageViewer() {
     maskDom.classList.add("active");
     hideSwitcher();
     updateSwitcher();
+    updateInfo();
 
     await openItemAtIndex(state.currentIndex, clickNode);
 
@@ -957,6 +1203,7 @@ export default function imageViewer() {
         state.resizeTimer = setTimeout(() => {
           state.resizeTimer = null;
           updateSwitcher();
+          syncInfoHeight();
         }, 120);
       };
       window.addEventListener("resize", state.resizeHandler, { passive: true });
@@ -980,6 +1227,8 @@ export default function imageViewer() {
     }
     hideSwitcher();
     maskDom.classList.remove("switching");
+    infoTrigger.style.display = "none";
+    resetInfoInstant();
 
     const el = state.activeEl;
     const ph = state.placeholder;
@@ -1045,15 +1294,15 @@ export default function imageViewer() {
       const sy = fromRect.height / toRect.height;
 
       // If we are closing a preloader that hasn't finished loading (still preloader node),
-      // we should just fade it out instead of scaling it back to the placeholder
-      // because scaling back a "loading spinner" looks weird if it's different from the original placeholder.
-      // However, if we want "fly back" effect for preloader too, we can keep it.
-      // Requirement: "正确处理如果在loading状态退出，preloader重新出现时只需要fade in opacity change的效果，而不是放大弹出过于夸张"
+      // we should fly it back if possible, to maintain animation consistency.
+      // Requirement: "error state的fly in fly out动画也需要保持相同比例大小"
+      // Since state.placeholder has the correct aspect ratio, flying back to it will work perfectly.
       
       const isPreloader = el.classList.contains("image-viewer-img-preloader") || el.classList.contains("img-preloader");
-      
-      if (isPreloader) {
-         // Just fade out the viewer element and fade in the original placeholder/preloader
+      const isError = el.classList.contains("img-preloader-error");
+
+      if (isError) {
+         // Requirement: "Error State Close()的时候only fade out就可以了"
          maskDom.classList.remove("active");
          
          // Animate opacity out
@@ -1079,10 +1328,15 @@ export default function imageViewer() {
             }, 220);
          }
       } else {
-          // Normal fly back for loaded images
+          // We treat all elements (images and normal preloaders) the same for fly-back, 
+          // as long as we have a valid placeholder to fly to.
+          
           maskDom.style.zIndex = String(MASK_Z_CLOSE);
     
           const cs = getComputedStyle(el);
+          // For preloaders, we might need to be careful about which styles we copy, 
+          // but copying all computed styles is generally safe for the flight clone.
+          
           el.style.cssText = `
             position:fixed;
             left:${toRect.left}px;
@@ -1106,6 +1360,10 @@ export default function imageViewer() {
             opacity:1;
             animation:none;
           `;
+          
+          // If it's a preloader error, we need to ensure the skeleton inside also scales/behaves correctly.
+          // Since we are scaling the container 'el', the children should scale with it.
+          
           document.body.appendChild(el);
           stage.innerHTML = "";
           maskDom.classList.remove("active");
@@ -1119,6 +1377,17 @@ export default function imageViewer() {
     
           if (state.articleOriginalNode instanceof HTMLElement) {
             ph.replaceWith(state.articleOriginalNode);
+            
+            // Optional: fade in the original node if it's different
+            state.articleOriginalNode.style.opacity = "0";
+            state.articleOriginalNode.animate([
+              { opacity: 0 },
+              { opacity: 1 }
+            ], { duration: 220, easing: "ease-out", fill: "forwards" });
+            setTimeout(() => {
+              if (!state.articleOriginalNode.isConnected) return;
+              state.articleOriginalNode.style.opacity = "";
+            }, 220);
           }
       }
     }
@@ -1197,6 +1466,7 @@ export default function imageViewer() {
       if (!state.isOpen) return;
       state.currentIndex = targetIndex;
       updateSwitcher();
+      updateInfo();
 
       const liveNode = getLiveNodeForItem(nextItem);
       const aspectRatio = getNodeAspectRatio(liveNode, nextItem);
@@ -1245,18 +1515,19 @@ export default function imageViewer() {
             await nextFrame();
             pre.remove();
             mountLoadedImgToStage(incomingEl);
-            incomingEl.style.opacity = "0";
-            await nextFrame();
-            incomingEl.style.transition = `opacity 220ms ${EASE}`;
-            incomingEl.style.opacity = "1";
+            playPreloaderPop(incomingEl);
           }).catch(() => {
             setViewerPreloaderError(pre, nextItem.src);
           });
         }
       } else if (liveNode instanceof HTMLElement && liveNode.classList.contains("img-preloader")) {
         const savedRect = liveNode.getBoundingClientRect();
+        const isErrorPreloader = liveNode.classList.contains("img-preloader-error");
+        const flightRect = isErrorPreloader
+          ? { left: savedRect.left, top: savedRect.top, width: savedRect.width, height: savedRect.width / aspectRatio }
+          : savedRect;
         state.articleOriginalNode = liveNode;
-        state.saved = { rect: { left: savedRect.left, top: savedRect.top, width: savedRect.width, height: savedRect.height } };
+        state.saved = { rect: { left: flightRect.left, top: flightRect.top, width: flightRect.width, height: flightRect.height } };
         state.placeholder = createPlaceholderForNode(liveNode, aspectRatio);
         liveNode.replaceWith(state.placeholder);
 
@@ -1284,12 +1555,22 @@ export default function imageViewer() {
           articleImg.classList.remove("img-preloader-fade-out");
           state.articleOriginalNode = articleImg;
           loadedPreloaders.add(liveNode);
-          incomingPre.remove();
-          mountLoadedImgToStage(articleImg);
-          articleImg.style.opacity = "0";
-          await nextFrame();
-          articleImg.style.transition = `opacity 220ms ${EASE}`;
-          articleImg.style.opacity = "1";
+          
+          // Smooth transition
+          incomingPre.style.position = "absolute";
+          incomingPre.style.left = "50%";
+          incomingPre.style.top = "50%";
+          incomingPre.style.transform = "translate(-50%, -50%)";
+
+          mountLoadedImgToStage(articleImg, false);
+
+          playPreloaderPop(articleImg);
+          
+          setTimeout(() => {
+            incomingPre.remove();
+            articleImg.style.transition = "";
+          }, PRELOADER_POP_MS);
+
         }).catch(() => {
           setViewerPreloaderError(incomingPre, nextItem.src);
         });
@@ -1341,6 +1622,19 @@ export default function imageViewer() {
     switchToIndex(idx);
   };
 
+  infoTrigger.onclick = (e) => {
+    e.stopPropagation();
+    if (infoTrigger.classList.contains("active") && !infoTrigger.classList.contains("closing")) {
+      closeInfo();
+      return;
+    }
+    openInfo();
+  };
+
+  infoContent.onclick = (e) => {
+    e.stopPropagation();
+  };
+
   if (!global.docBound) {
     global.handlers.onDocClick = e => {
       const api = global.api;
@@ -1363,12 +1657,22 @@ export default function imageViewer() {
   if (global.maskEl !== maskDom) {
     if (global.maskEl && global.handlers.onMaskClick) {
       global.maskEl.removeEventListener("click", global.handlers.onMaskClick, false);
+      global.maskEl.removeEventListener("click", global.handlers.onMaskClick, true);
     }
     global.handlers.onMaskClick = e => {
       if (!state.isOpen || state.isDragging) return;
+
+      if (infoTrigger.classList.contains("active")) {
+        if (!infoTrigger.contains(e.target)) {
+          closeInfo();
+          // Allow propagation so buttons (switcher/nav) can handle the click
+        }
+        return;
+      }
+
       if (e.target === maskDom || e.target === stage) close();
     };
-    maskDom.addEventListener("click", global.handlers.onMaskClick, false);
+    maskDom.addEventListener("click", global.handlers.onMaskClick, true);
     global.maskEl = maskDom;
   }
 
@@ -1416,6 +1720,7 @@ export default function imageViewer() {
         state.translateX = e.clientX - state.dragStartX;
         state.translateY = e.clientY - state.dragStartY;
         state.isDragging = true;
+        if (infoTrigger.classList.contains("active")) closeInfo();
         applyTransform(); constrainVisible();
         return;
       }
@@ -1435,6 +1740,7 @@ export default function imageViewer() {
         const cx = midX - (rect.left + rect.width / 2), cy = midY - (rect.top + rect.height / 2);
         state.translateX -= cx * (ratio - 1); state.translateY -= cy * (ratio - 1);
         state.scale = s; state.isDragging = true;
+        if (infoTrigger.classList.contains("active")) closeInfo();
         applyTransform(); constrainVisible();
       }
     };

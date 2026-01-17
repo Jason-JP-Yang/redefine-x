@@ -282,4 +282,7 @@
       setTimeout(handleResize, 300); // Standard transition time
     });
   }
+
+  // Listen for forced checks (e.g. from lazyload error)
+  window.addEventListener('redefine:force-exif-check', debouncedResize);
 })();
