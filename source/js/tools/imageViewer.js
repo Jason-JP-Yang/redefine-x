@@ -335,6 +335,7 @@ export default function imageViewer() {
   // Close-layer order requirement:
   // navbar (1005) > flying image (1004) > blur mask (1003) > article
   // This keeps the image unblurred while staying under the navbar.
+  // info-trigger (1010) must be above flight (1009)
   const FLIGHT_Z_CLOSE = 1004;
   const MASK_Z_CLOSE = 1003;
 
@@ -1696,6 +1697,7 @@ export default function imageViewer() {
       const ratio = state.scale / oldScale - 1;
       state.translateX -= mouseX * ratio; state.translateY -= mouseY * ratio;
       state.activeImg.style.transition = "none";
+      if (infoTrigger.classList.contains("active")) closeInfo();
       applyTransform(); constrainVisible();
     };
 

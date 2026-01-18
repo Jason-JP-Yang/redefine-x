@@ -309,7 +309,7 @@
   left 50%
   top calc(env(safe-area-inset-top) + 18px)
   transform translateX(-50%)
-  z-index $z-index-8 + 2
+  z-index $z-index-8 + 3
   
   display flex
   align-items center
@@ -392,6 +392,9 @@
       margin 0
       width 100%
       box-sizing border-box
+
+      .image-viewer-info-trigger.measuring &
+        width 90vw
       
       .image-exif-image-wrapper
         display none
@@ -418,7 +421,7 @@
           grid-template-columns repeat(2, minmax(130px, 1fr)) !important
           gap 0.5rem !important
           
-          @media (min-width: 600px)
+          @media (min-width: 700px)
              grid-template-columns repeat(4, minmax(130px, 1fr)) !important
 
       :root.dark &
@@ -443,7 +446,7 @@
 
   &.active
     width 90vw
-    max-width 640px
+    max-width 800px
     border-radius $redefine-border-radius-large
     background rgba(255, 255, 255, 0.7)
     backdrop-filter blur(20px) saturate(180%)
