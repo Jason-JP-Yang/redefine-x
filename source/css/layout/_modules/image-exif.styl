@@ -340,3 +340,57 @@ $image-exif-border-radius = $redefine-border-radius-medium
   @media (min-width: 1200px)
     .image-exif-data
       grid-template-columns repeat(4, minmax(0, 1fr))
+
+// ======================================================================
+// Mode 4: Side-by-Side Layout (Highest Priority)
+// Layout: Image Left | Info Right
+// ======================================================================
+.image-exif-container.image-exif-side
+  width 100%
+  
+  .image-exif-image-wrapper
+    display flex !important
+    flex-direction row !important
+    align-items center !important
+    justify-content center !important
+    text-align left !important
+    width 100%
+    
+    .image-exif-img
+      flex 0 0 auto
+      margin 0 !important // Reset margin: 0 auto
+      max-height 80svh
+      width auto
+      max-width 100%
+      
+    .image-exif-info-card
+      flex 1 1 auto
+      width auto
+      min-width 130px
+      // max-width is controlled by JS dynamically
+      max-width 400px 
+      margin 0 0 0 1.5rem !important // Left margin for spacing
+      height fit-content
+      
+      // Block style background (no glass)
+      background $image-exif-card-bg
+      border none
+      backdrop-filter none
+      -webkit-backdrop-filter none
+      box-shadow $image-exif-shadow
+      
+      // Always visible & Position reset
+      position static !important
+      opacity 1 !important
+      pointer-events auto !important
+      transform none !important
+      
+      .image-exif-toggle-btn
+        display none !important
+        
+      .image-exif-data
+        height auto !important
+        opacity 1 !important
+        margin-top 0.6rem !important
+        display grid !important
+        grid-template-columns repeat(auto-fit, minmax(130px, 1fr))

@@ -2,20 +2,131 @@
  * Image EXIF Info Card - Runtime Handler
  * 
  * Handles responsive layout detection for image-exif containers:
- * 1. Detects if side-by-side layout has enough horizontal space
- * 2. Detects if float overlay card would exceed image height
- * 3. Adds fallback classes when needed
+ * 1. Side-by-Side: Tries to put info next to image if space permits (Priority 1)
+ * 2. Float: Detects if float overlay card would exceed image height (Priority 2)
+ * 3. Fallback: Adds fallback classes when needed
  */
 
 (function() {
   'use strict';
 
   /**
+   * Check if Side-by-Side layout is possible
+   * @returns {boolean} true if side layout applied
+   */
+  function checkSideLayout(container) {
+    const imageWrapper = container.querySelector('.image-exif-image-wrapper');
+    const infoCard = container.querySelector('.image-exif-info-card');
+    if (!imageWrapper || !infoCard) return false;
+
+    const img = imageWrapper.querySelector('img.image-exif-img');
+    const preloader = imageWrapper.querySelector('.img-preloader');
+    
+    // Get image dimensions
+    let imgHeight = 0;
+    let imgWidth = 0;
+    
+    if (img && img.complete && img.naturalHeight > 0) {
+      imgHeight = img.offsetHeight || img.clientHeight;
+      imgWidth = img.offsetWidth || img.clientWidth;
+    } else if (preloader) {
+      imgHeight = preloader.offsetHeight || preloader.clientHeight;
+      imgWidth = preloader.offsetWidth || preloader.clientWidth;
+    }
+
+    if (imgHeight === 0 || imgWidth === 0) return false;
+
+    // Use getBoundingClientRect for precise measurement
+    const containerRect = container.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    
+    // Get gap from CSS if possible, fallback to 24
+    let gap = 24; // 1.5rem
+    
+    // Safety buffer
+    const buffer = 10;
+    
+    // Check if we have enough space
+    // Since we are moving card into flex row with image, the total width requirement is:
+    // imgWidth + gap + minCardWidth <= containerWidth
+    
+    const minCardWidth = 130;
+    const availableSpace = containerWidth - imgWidth - gap - buffer;
+
+    // Condition 1: Horizontal space >= 130px
+    if (availableSpace >= minCardWidth) {
+      // Measure Card Height at this width
+      const clone = infoCard.cloneNode(true);
+      clone.classList.remove('expanded');
+      
+      // Calculate strict width limit
+      const targetWidth = Math.min(availableSpace, 400);
+      
+      Object.assign(clone.style, {
+          display: 'block',
+          visibility: 'hidden',
+          position: 'absolute',
+          top: '0',
+          left: '0',
+          width: targetWidth + 'px', // Enforce strict width
+          height: 'auto',
+          maxHeight: 'none',
+          padding: '0.65rem',
+          boxSizing: 'border-box',
+          zIndex: '-9999'
+      });
+      
+      // Force data visible
+      const cloneData = clone.querySelector('.image-exif-data');
+      if (cloneData) {
+        Object.assign(cloneData.style, {
+            display: 'grid',
+            height: 'auto',
+            marginTop: '0.6rem',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+            gap: '0.6rem'
+        });
+      }
+      
+      // Hide toggle button in clone
+      const cloneBtn = clone.querySelector('.image-exif-toggle-btn');
+      if (cloneBtn) cloneBtn.style.display = 'none';
+      
+      // Append clone to container for measurement
+      container.appendChild(clone);
+      const cardHeight = clone.offsetHeight;
+      container.removeChild(clone);
+      
+      // Condition 2: Height <= Image Height * 1.1
+      if (cardHeight <= imgHeight * 1.1) {
+        // Apply Side Mode
+        if (!container.classList.contains('image-exif-side')) {
+            container.classList.add('image-exif-side');
+            // Clean up other mode artifacts
+            container.classList.remove('image-exif-overflow-fallback');
+            infoCard.style.display = '';
+            infoCard.style.visibility = '';
+            infoCard.style.opacity = '';
+        }
+        
+        // Always set max-width to ensure flex item doesn't grow beyond available space
+        // This is CRITICAL to prevent wrapping
+        infoCard.style.maxWidth = targetWidth + 'px';
+        
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
    * Check if float mode card would overflow the image
    */
-  function checkFloatOverflow(container) {
-    if (!container.classList.contains('image-exif-float')) return;
-
+  function checkFloatLayout(container) {
+    // If side mode is active, don't do float check
+    if (container.classList.contains('image-exif-side')) return;
+    
     const imageWrapper = container.querySelector('.image-exif-image-wrapper');
     const infoCard = container.querySelector('.image-exif-info-card');
     
@@ -33,36 +144,29 @@
       imageHeight = preloader.offsetHeight || preloader.clientHeight;
     }
 
-    // If image height is 0, wait for load
     if (imageHeight === 0) return;
 
-    // Use clone to measure dimensions without affecting current DOM state (prevents flickering)
-    // Clone the info card
+    // Use clone to measure dimensions
     const clone = infoCard.cloneNode(true);
-    
-    // Clean up clone class and styles for measurement
     clone.classList.remove('expanded');
     
-    // Explicitly set styles to match the float mode CSS exactly
-    // This is crucial for accurate measurement
     Object.assign(clone.style, {
         display: 'block',
         visibility: 'hidden',
         position: 'absolute',
         top: '0',
         left: '0',
-        width: 'max-content', // Allow it to expand naturally first
-        maxWidth: '60%',      // But constrain by the same limit as CSS
+        width: 'max-content',
+        maxWidth: '60%',
         height: 'auto',
         maxHeight: 'none',
-        overflow: 'visible',  // Allow full expansion
+        overflow: 'visible',
         boxSizing: 'border-box',
-        padding: '0.65rem',   // Match CSS padding
-        background: 'transparent', // Avoid visual artifacts
+        padding: '0.65rem',
+        background: 'transparent',
         zIndex: '-9999'
     });
     
-    // We need to force the data section to be visible in the clone to measure full height
     const cloneData = clone.querySelector('.image-exif-data');
     if (cloneData) {
       Object.assign(cloneData.style, {
@@ -75,60 +179,79 @@
       });
     }
     
-    // Hide toggle button in clone
     const cloneBtn = clone.querySelector('.image-exif-toggle-btn');
-    if (cloneBtn) {
-      cloneBtn.style.display = 'none';
-    }
+    if (cloneBtn) cloneBtn.style.display = 'none';
 
-    // Append to container to get correct inherited styles (font-size, etc)
-    // Important: Append to the image wrapper so it shares the same width context
     imageWrapper.appendChild(clone);
-    
     const cardHeight = clone.offsetHeight;
     const scrollHeight = clone.scrollHeight;
-    
-    // Use the larger of offsetHeight or scrollHeight to be safe
     const finalCardHeight = Math.max(cardHeight, scrollHeight);
-    
     imageWrapper.removeChild(clone);
 
-    // Account for padding (12px top + 12px bottom from positioning)
     const availableHeight = imageHeight - 24;
-    
-    // // Debug logging
-    // console.log('[ImageEXIF Debug]', {
-    //     imgSrc: img ? img.src.split('/').pop() : 'unknown',
-    //     imageHeight,
-    //     availableHeight,
-    //     measuredHeight: finalCardHeight,
-    //     isOverflow: finalCardHeight > availableHeight - 2,
-    //     details: {
-    //         cardOffset: cardHeight,
-    //         cardScroll: scrollHeight
-    //     }
-    // });
 
-    // If card would exceed available height (minus minimal buffer), add fallback class
-    // Reduced buffer from 10px to 2px to be less aggressive about falling back
     if (finalCardHeight > availableHeight - 2) {
       if (!container.classList.contains('image-exif-overflow-fallback')) {
         container.classList.add('image-exif-overflow-fallback');
-        // Clear any inline styles that might have been set
         infoCard.style.display = '';
         infoCard.style.visibility = '';
         infoCard.style.opacity = '';
       }
     } else {
       if (container.classList.contains('image-exif-overflow-fallback')) {
-        // Prevent transition flashing when switching back to float
         infoCard.style.transition = 'none';
         container.classList.remove('image-exif-overflow-fallback');
-        // Force reflow to apply no-transition
         infoCard.offsetHeight;
-        // Restore transition
         infoCard.style.transition = '';
       }
+    }
+  }
+
+  /**
+   * Main Layout Controller
+   */
+  function checkLayout(container) {
+    // 1. Store original layout
+    if (!container.dataset.originalLayout) {
+      if (container.classList.contains('image-exif-float')) container.dataset.originalLayout = 'float';
+      else if (container.classList.contains('image-exif-block')) container.dataset.originalLayout = 'block';
+      else container.dataset.originalLayout = 'block';
+    }
+
+    const infoCard = container.querySelector('.image-exif-info-card');
+
+    // 2. Try Side-by-Side (Highest Priority)
+    const isSide = checkSideLayout(container);
+    
+    if (isSide) {
+        return;
+    } else {
+        // Fallback cleanup
+        if (container.classList.contains('image-exif-side')) {
+            container.classList.remove('image-exif-side');
+        }
+        
+        // CRITICAL: Clean up side-mode inline styles
+        if (infoCard) {
+            infoCard.style.maxWidth = ''; // Remove fixed width
+        }
+    }
+
+    // 3. Fallback to configured layout
+    if (container.dataset.originalLayout === 'float') {
+        checkFloatLayout(container);
+    } else {
+        // Block mode
+        if (container.classList.contains('image-exif-overflow-fallback')) {
+            container.classList.remove('image-exif-overflow-fallback');
+        }
+        
+        // Clean up any potential inline styles from other modes
+        if (infoCard) {
+            infoCard.style.display = '';
+            infoCard.style.visibility = '';
+            infoCard.style.opacity = '';
+        }
     }
   }
 
@@ -145,31 +268,15 @@
     const isExpanded = card.classList.contains('expanded');
     
     if (isExpanded) {
-      // Collapse
-      // 1. Set explicit height to current scrollHeight (start state)
       dataContainer.style.height = dataContainer.scrollHeight + 'px';
-      
-      // 2. Force reflow to register start state
       dataContainer.offsetHeight;
-      
-      // 3. Remove class and animate to 0
       card.classList.remove('expanded');
       dataContainer.style.height = '0';
     } else {
-      // Expand
-      // 1. Ensure start state is explicitly 0
       dataContainer.style.height = '0px';
-      
-      // 2. Force reflow to register start state
       dataContainer.offsetHeight;
-      
-      // 3. Add class (for opacity/margin transitions)
       card.classList.add('expanded');
-      
-      // 4. Set target height to trigger transition
       dataContainer.style.height = dataContainer.scrollHeight + 'px';
-      
-      // 5. Clear height after transition to allow auto resizing
       dataContainer.addEventListener('transitionend', function() {
         if (card.classList.contains('expanded')) {
           dataContainer.style.height = 'auto';
@@ -185,24 +292,23 @@
     const containers = document.querySelectorAll('.image-exif-container');
     
     containers.forEach(container => {
-      // Setup toggle buttons
       const toggleBtns = container.querySelectorAll('.image-exif-toggle-btn');
       toggleBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
-          e.stopPropagation(); // Prevent bubbling
+          e.stopPropagation();
           handleToggle(btn);
         });
       });
 
-      // Check float overflow
-      checkFloatOverflow(container);
+      // Initial check
+      checkLayout(container);
 
-      // Listen for image load to re-check
+      // Listen for image load
       const images = container.querySelectorAll('img.image-exif-img');
       images.forEach(img => {
         if (!img.complete) {
           img.addEventListener('load', () => {
-            checkFloatOverflow(container);
+            checkLayout(container);
           });
         }
       });
@@ -210,16 +316,15 @@
       // Listen for lazyload completion
       const imageWrapper = container.querySelector('.image-exif-image-wrapper');
       if (imageWrapper && imageWrapper.querySelector('.img-preloader')) {
-        // Create a mutation observer to detect when img replaces preloader
         const observer = new MutationObserver((mutations) => {
           mutations.forEach(mutation => {
             mutation.addedNodes.forEach(node => {
               if (node.tagName === 'IMG') {
                 if (node.complete) {
-                  checkFloatOverflow(container);
+                  checkLayout(container);
                 } else {
                   node.addEventListener('load', () => {
-                    checkFloatOverflow(container);
+                    checkLayout(container);
                   });
                 }
               }
@@ -236,15 +341,15 @@
    * Re-check on resize
    */
   function handleResize() {
-    const containers = document.querySelectorAll('.image-exif-container.image-exif-float');
+    const containers = document.querySelectorAll('.image-exif-container');
     containers.forEach(container => {
-      checkFloatOverflow(container);
+      checkLayout(container);
     });
   }
 
   // Debounce resize handler
   let resizeTimeout;
-  let isChecking = false; // Lock to prevent concurrent checks
+  let isChecking = false;
   
   function debouncedResize() {
     if (isChecking) return;
@@ -260,29 +365,23 @@
     }, 150);
   }
 
-  // Initialize on DOMContentLoaded
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initImageExif);
   } else {
     initImageExif();
   }
 
-  // Re-initialize on page changes (for SPA/PJAX)
   document.addEventListener('swup:contentReplaced', initImageExif);
   document.addEventListener('pjax:complete', initImageExif);
 
-  // Handle resize
   window.addEventListener('resize', debouncedResize);
   
-  // Handle sidebar toggle
   const toggleBar = document.querySelector(".page-aside-toggle");
   if (toggleBar) {
     toggleBar.addEventListener("click", () => {
-      // Wait for transition to finish or check periodically
-      setTimeout(handleResize, 300); // Standard transition time
+      setTimeout(handleResize, 300);
     });
   }
 
-  // Listen for forced checks (e.g. from lazyload error)
   window.addEventListener('redefine:force-exif-check', debouncedResize);
 })();
