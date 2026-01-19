@@ -10,6 +10,10 @@
 (function() {
   'use strict';
 
+  // Developer Constant: Force Layout Mode
+  // Options: 'None' (default), 'Side', 'Float', 'Block'
+  const DEV_FORCE_LAYOUT_MODE = 'Float';
+
   /**
    * Check if Side-by-Side layout is possible
    * @returns {boolean} true if side layout applied
@@ -18,6 +22,29 @@
     const imageWrapper = container.querySelector('.image-exif-image-wrapper');
     const infoCard = container.querySelector('.image-exif-info-card');
     if (!imageWrapper || !infoCard) return false;
+
+    // Check dev override
+    if (DEV_FORCE_LAYOUT_MODE !== 'None') {
+        if (DEV_FORCE_LAYOUT_MODE === 'Side') {
+             // Force Apply Side Mode
+            if (!container.classList.contains('image-exif-side')) {
+                container.classList.add('image-exif-side');
+                container.classList.remove('image-exif-overflow-fallback');
+                infoCard.style.display = '';
+                infoCard.style.visibility = '';
+                infoCard.style.opacity = '';
+                // In forced mode, we still need a width, default to 300px if calculation skipped
+                // But better to let it be or set max-width: 400px (CSS default)
+                // We'll leave inline maxWidth empty to let CSS handle it, or set a reasonable default
+                infoCard.style.maxWidth = '400px'; 
+            }
+            // Continue execution to check if it WOULD fallback, but still return true at end
+        } else {
+            return false; // Force fail side check if mode is Float or Block
+        }
+    } else {
+        // Normal mode execution, proceed
+    }
 
     const img = imageWrapper.querySelector('img.image-exif-img');
     const preloader = imageWrapper.querySelector('.img-preloader');
@@ -114,9 +141,49 @@
         infoCard.style.maxWidth = targetWidth + 'px';
         
         return true;
+      } else {
+        if (DEV_FORCE_LAYOUT_MODE !== 'None') {
+             console.warn('[ImageEXIF] Forced Side Mode Warning: Height Mismatch', {
+                imgHeight,
+                cardHeight,
+                limit: imgHeight * 1.1,
+                reason: 'Card taller than image (Forced Mode Active)'
+            });
+            // In forced mode, we still return true
+            if (DEV_FORCE_LAYOUT_MODE === 'Side') return true;
+        } else {
+            // Normal None mode warning
+            // console.warn('[ImageEXIF] Side Layout Fallback: Height Mismatch', ...); 
+            // User requested NO output in None mode
+        }
       }
+    } else {
+        if (DEV_FORCE_LAYOUT_MODE !== 'None') {
+             console.warn('[ImageEXIF] Forced Side Mode Warning: Width Mismatch', {
+                availableSpace,
+                minCardWidth,
+                containerWidth,
+                imgWidth,
+                reason: 'Not enough horizontal space (Forced Mode Active)'
+            });
+            // In forced mode, we still return true if mode is Side
+            if (DEV_FORCE_LAYOUT_MODE === 'Side') return true;
+        } else {
+             // Normal None mode warning
+             // console.warn('[ImageEXIF] Side Layout Fallback: Width Mismatch', ...);
+             // User requested NO output in None mode
+        }
     }
     
+    // If we are here, it means check failed
+    // If Forced Side Mode, we ALREADY returned true above (inside warning blocks) if we reached them.
+    // However, if availableSpace < minCardWidth, we are in the 'else' block of Condition 1.
+    // If cardHeight > imgHeight * 1.1, we are in 'else' block of Condition 2.
+    
+    // One edge case: if we are forcing Side, but we didn't enter calculation blocks?
+    // We handle that by returning true if forced side.
+    if (DEV_FORCE_LAYOUT_MODE === 'Side') return true;
+
     return false;
   }
 
@@ -127,6 +194,29 @@
     // If side mode is active, don't do float check
     if (container.classList.contains('image-exif-side')) return;
     
+    // Check dev override
+    if (DEV_FORCE_LAYOUT_MODE !== 'None') {
+        if (DEV_FORCE_LAYOUT_MODE === 'Float') {
+            // Force Float Mode (ensure no fallback class)
+            if (container.classList.contains('image-exif-overflow-fallback')) {
+                infoCard.style.transition = 'none';
+                container.classList.remove('image-exif-overflow-fallback');
+                infoCard.offsetHeight;
+                infoCard.style.transition = '';
+            }
+            // Continue to check if it WOULD fallback
+        } else if (DEV_FORCE_LAYOUT_MODE === 'Block') {
+             // Force Block Mode (add fallback class if this is how block is simulated from float)
+             if (!container.classList.contains('image-exif-overflow-fallback')) {
+                container.classList.add('image-exif-overflow-fallback');
+                infoCard.style.display = '';
+                infoCard.style.visibility = '';
+                infoCard.style.opacity = '';
+             }
+             return; // Block mode is fallback, so no need to check overflow further
+        }
+    }
+
     const imageWrapper = container.querySelector('.image-exif-image-wrapper');
     const infoCard = container.querySelector('.image-exif-info-card');
     
@@ -192,6 +282,17 @@
 
     if (finalCardHeight > availableHeight - 2) {
       if (!container.classList.contains('image-exif-overflow-fallback')) {
+        if (DEV_FORCE_LAYOUT_MODE !== 'None') {
+            console.warn('[ImageEXIF] Forced Float Mode Warning: Height Overflow', {
+                finalCardHeight,
+                availableHeight,
+                diff: finalCardHeight - availableHeight,
+                reason: 'Card height exceeds available image height (Forced Mode Active)'
+            });
+            // If forced Float, we DO NOT add fallback class, effectively ignoring the overflow
+            if (DEV_FORCE_LAYOUT_MODE === 'Float') return;
+        }
+        
         container.classList.add('image-exif-overflow-fallback');
         infoCard.style.display = '';
         infoCard.style.visibility = '';
