@@ -504,6 +504,11 @@ hexo.on('exit', async () => {
 
 // Cleanup build dir on clean
 hexo.extend.filter.register("after_clean", function () {
+  if (hexo.env.args["exclude-minify"]) {
+    hexo.log.info("[redefine-x][img-avif] Build directory cleanup skipped (--exclude-minify).");
+    return;
+  }
+
   const buildDir = path.join(hexo.source_dir || "", "build");
   try {
     fs.rmSync(buildDir, { recursive: true, force: true });
