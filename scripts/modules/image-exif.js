@@ -51,7 +51,7 @@ const EXIF_FIELD_MAPPINGS = {
   ExposureTime: ["ExposureTime", "exposureTime", "ShutterSpeed", "ShutterSpeedValue"],
   Aperture: ["FNumber", "ApertureValue", "Aperture", "aperture", "fNumber"],
   ISOSpeedRatings: ["ISO", "ISOSpeedRatings", "isoSpeedRatings", "PhotographicSensitivity"],
-  FocalLength: ["FocalLength", "focalLength", "FocalLengthIn35mmFormat"],
+  FocalLength: ["FocalLengthIn35mmFormat", "FocalLength", "focalLength"],
   ExposureProgram: ["ExposureProgram", "exposureProgram"],
   MeteringMode: ["MeteringMode", "meteringMode"],
   Flash: ["Flash", "flash", "FlashMode"],
@@ -152,7 +152,7 @@ function validateContent(content, hexoLog) {
   }
 
   // Check for exif-info comment block
-  const exifInfoMatches = content.match(/<!--\s*exif-info\s*\n[\s\S]*?-->/g);
+  const exifInfoMatches = content.match(/<!--\s*exif-info[\s\S]*?-->/g);
 
   if (exifInfoMatches && exifInfoMatches.length > 1) {
     throw new Error("[image-exif] 内容最多只能包含一个 exif-info 块，检测到 " + exifInfoMatches.length + " 个。");
@@ -161,7 +161,7 @@ function validateContent(content, hexoLog) {
   // Check for other content that shouldn't be there
   const cleanedContent = content
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "")           // Remove image
-    .replace(/<!--\s*exif-info\s*\n[\s\S]*?-->/g, "")   // Remove exif-info comment
+    .replace(/<!--\s*exif-info[\s\S]*?-->/g, "")        // Remove exif-info comment
     .replace(/<!--[^>]*-->/g, "")                       // Remove other HTML comments (Hexo placeholders)
     .trim();
 
@@ -194,21 +194,47 @@ function extractImageInfo(content) {
  */
 function extractCustomInfo(content) {
   // Match <!-- exif-info ... --> pattern
-  const commentMatch = content.match(/<!--\s*exif-info\s*\n([\s\S]*?)-->/);
+  const commentMatch = content.match(/<!--\s*exif-info([\s\S]*?)-->/);
   if (!commentMatch) return {};
 
-  const lines = commentMatch[1].split("\n");
+  const rawContent = commentMatch[1];
   const info = {};
-
-  for (const line of lines) {
-    const colonIndex = line.indexOf(":");
-    if (colonIndex === -1) continue;
-
-    const key = line.substring(0, colonIndex).trim();
-    const value = line.substring(colonIndex + 1).trim();
-
-    if (key && value) {
-      info[key] = value;
+  
+  // Get all valid keys from mappings
+  const validKeys = Object.keys(EXIF_FIELD_MAPPINGS);
+  
+  // Construct regex to find all "Key:" occurrences
+  // We sort keys by length descending to ensure longer keys match first (though not strictly necessary given the current key set, it's safer)
+  // e.g. if we had "Flash" and "FlashMode", we'd want to match "FlashMode:" before "Flash:"
+  const sortedKeys = [...validKeys].sort((a, b) => b.length - a.length);
+  const keyPattern = sortedKeys.join("|");
+  const regex = new RegExp(`(${keyPattern}):`, "g");
+  
+  const matches = [];
+  let match;
+  
+  // Find all key matches
+  while ((match = regex.exec(rawContent)) !== null) {
+    matches.push({
+      key: match[1],
+      index: match.index,
+      endIndex: match.index + match[0].length
+    });
+  }
+  
+  // Extract values between keys
+  for (let i = 0; i < matches.length; i++) {
+    const current = matches[i];
+    const next = matches[i + 1];
+    
+    // Value is the text between the end of current key and the start of next key (or end of string)
+    const valueStartIndex = current.endIndex;
+    const valueEndIndex = next ? next.index : rawContent.length;
+    
+    const value = rawContent.substring(valueStartIndex, valueEndIndex).trim();
+    
+    if (value) {
+      info[current.key] = value;
     }
   }
 
@@ -309,6 +335,26 @@ function getExifValue(exifData, fieldName) {
 }
 
 /**
+ * Convert decimal degrees to DMS (Degrees, Minutes, Seconds)
+ */
+function convertToDMS(value, isLatitude) {
+  const absolute = Math.abs(value);
+  const degrees = Math.floor(absolute);
+  const minutesNotTruncated = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesNotTruncated);
+  const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(2);
+  
+  let direction = "";
+  if (isLatitude) {
+    direction = value >= 0 ? "N" : "S";
+  } else {
+    direction = value >= 0 ? "E" : "W";
+  }
+  
+  return `${degrees}°${minutes}'${seconds}"${direction}`;
+}
+
+/**
  * Format EXIF value for display
  */
 function formatExifValue(fieldName, value) {
@@ -353,7 +399,8 @@ function formatExifValue(fieldName, value) {
 
     case "Flash":
       if (typeof value === "number") {
-        return FLASH_MODE_MAP[value] || (value > 0 ? "闪光" : "未闪光");
+        // Bit 0 indicates if flash fired
+        return (value & 1) ? "ON" : "OFF";
       }
       return value;
 
@@ -364,9 +411,14 @@ function formatExifValue(fieldName, value) {
       return value;
 
     case "GPSLatitude":
+      if (typeof value === "number") {
+        return convertToDMS(value, true);
+      }
+      return value;
+
     case "GPSLongitude":
       if (typeof value === "number") {
-        return value.toFixed(6) + "°";
+        return convertToDMS(value, false);
       }
       return value;
 
@@ -406,7 +458,9 @@ function buildMergedInfo(autoExifData, customInfo, autoExifEnabled) {
   for (const field of fields) {
     // Custom info has priority
     if (customInfo[field]) {
-      result[field] = customInfo[field];
+      if (customInfo[field].toLowerCase() !== "false") {
+        result[field] = customInfo[field];
+      }
     } else if (autoExifEnabled && autoExifData) {
       const value = getExifValue(autoExifData, field);
       const formatted = formatExifValue(field, value);
@@ -433,6 +487,28 @@ function generateHTML(imageInfo, title, description, exifInfo, hexo) {
 
   if (!hasTitle && !hasDescription && !hasExifData) {
     throw new Error("[image-exif] 必须至少有一项数据（title、description 或 EXIF 信息）。");
+  }
+
+  // Check for Simple Mode (No EXIF data, but has image info)
+  if (!hasExifData && (hasTitle || hasDescription)) {
+    let captionContent = "";
+    
+    if (hasTitle) {
+      // Use strong tag for bold title as requested
+      captionContent += `<strong class="image-exif-title">${escapeHtml(title)}</strong>`;
+    }
+    
+    if (hasDescription) {
+      if (hasTitle) captionContent += "<br>";
+      captionContent += escapeHtml(description);
+    }
+    
+    return `
+<figure class="image-caption image-exif-simple-container">
+  <img src="${escapeHtmlAttr(imageInfo.path)}" alt="${escapeHtmlAttr(description)}" class="image-exif-img" data-no-img-handle="true" />
+  <figcaption>${captionContent}</figcaption>
+</figure>
+`;
   }
 
   // Build info card content

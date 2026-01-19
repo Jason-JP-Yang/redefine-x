@@ -13,7 +13,8 @@ hexo.extend.filter.register('after_post_render', function (data) {
         
         // Use a more sophisticated approach to avoid processing images inside image-exif-container
         // Split content by image-exif-container blocks and only process images outside them
-        const exifContainerRegex = /(<figure[^>]*class="[^"]*image-exif-container[^"]*"[^>]*>[\s\S]*?<\/figure>)/g;
+        // Also support image-exif-simple-container for simplified display
+        const exifContainerRegex = /(<figure[^>]*class="[^"]*(?:image-exif-container|image-exif-simple-container)[^"]*"[^>]*>[\s\S]*?<\/figure>)/g;
         const parts = data.content.split(exifContainerRegex);
         
         data.content = parts.map((part, index) => {
@@ -22,18 +23,25 @@ hexo.extend.filter.register('after_post_render', function (data) {
                 if (enableFigureNumber) {
                     figureIndex += 1;
                     
-                    // Case 1: Has existing title
+                    // Case 1: Has existing title (support any tag, not just div)
                     if (part.includes('class="image-exif-title"')) {
                         return part.replace(
-                            /(<div class="image-exif-title">)(.*?)(<\/div>)/, 
+                            /(<[^>]*\bclass="[^"]*image-exif-title[^"]*"[^>]*>)(.*?)(<\/[^>]+>)/, 
                             `$1<strong>Figure ${figureIndex}.</strong> $2$3`
                         );
                     } 
-                    // Case 2: No title, insert one
-                    else {
+                    // Case 2: No title, insert one (Standard EXIF mode)
+                    else if (part.includes('class="image-exif-header-content"')) {
                         return part.replace(
                             /(<div class="image-exif-header-content">)/,
                             `$1<div class="image-exif-title">Figure ${figureIndex}</div>`
+                        );
+                    }
+                    // Case 3: Simple container with only figcaption (Simple mode with only description)
+                    else if (part.includes('image-exif-simple-container')) {
+                        return part.replace(
+                            /(<figcaption>)/,
+                            `$1<strong>Figure ${figureIndex}.</strong> `
                         );
                     }
                 }
