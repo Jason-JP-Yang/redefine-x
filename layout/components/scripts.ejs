@@ -28,6 +28,11 @@
     }) %>
 <% } %>
 
+<%# Image EXIF Info Card runtime handler - always loaded %>
+<%- renderJS('layouts/imageExif.js', {
+    module: false
+}) %>
+
 <% if (theme.footer.runtime) { %>
     <%- renderJS('tools/runtime.js') %>
     <%- renderJS('libs/odometer.min.js') %>

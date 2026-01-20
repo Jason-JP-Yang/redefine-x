@@ -73,14 +73,15 @@ global:
   # Effects on mouse hover
   hover:
     shadow: true # shadow effect
-    scale: false # scale effect
+    scale: true # scale effect
+    auto_hover: true # when element move into viewpoint, show the hover animation automatically
   # Scroll progress
   scroll_progress:
-    bar: false # progress bar
+    bar: true # progress bar
     percentage: true # percentage
   # Website counter
   website_counter:
-    url: https://cn.vercount.one/js # counter API URL (no need to change)
+    url: https://www.vercount.one/js # counter API URL (no need to change)
     enable: true # enable website counter or not
     site_pv: true # site page view
     site_uv: true # site unique visitor
@@ -282,8 +283,9 @@ articles:
     font_size: 16px # Font size
     line_height: 1.5 # Line height
     image_border_radius: 14px # image border radius
-    image_alignment: center # image alignment. left, center
-    image_caption: false # Whether to display image caption
+    image_caption: block # Whether to display image caption: false | float | block
+    image_figure_number: false # Whether to display figure number for images; Only works when image_caption is true
+    image_max_height: 80svh # Max height for images
     link_icon: true # Whether to display link icon
     delete_mask: false # Add mask effect to <del> tags, hiding content by default and revealing on hover
     title_alignment: left # Title alignment. left, center
@@ -327,7 +329,11 @@ articles:
     enable: true # Whether to enable
     default: cc_by_nc_sa # Default license, can be cc_by_nc_sa, cc_by_nd, cc_by_nc, cc_by_sa, cc_by, all_rights_reserved, public_domain
   # Whether to enable lazyload for images
+  # Strongly recommended to enable this feature to improve page load speed
   lazyload: true
+  # Preload Images that out of viewpoint when Idle to improve user experience
+  # Only Enable this when lazyload is true
+  lazyload_preload: false
   # Pangu.js (automatically add space between Chinese and English). See https://github.com/vinta/pangu.js
   pangu_js: false
   # Article recommendation. Requires @node-rs/jieba (npm install @node-rs/jieba). Transplanted from hexo-theme-volantis.

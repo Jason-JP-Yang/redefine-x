@@ -2,11 +2,12 @@
 import initUtils from "./utils.js";
 import initTyped from "./plugins/typed.js";
 import initModeToggle from "./tools/lightDarkSwitch.js";
-import initLazyLoad from "./layouts/lazyload.js";
 import initScrollTopBottom from "./tools/scrollTopBottom.js";
 import initLocalSearch from "./tools/localSearch.js";
 import initCopyCode from "./tools/codeBlock.js";
 import initBookmarkNav from "./layouts/bookmarkNav.js";
+import initLazyLoad from "./layouts/lazyload.js";
+import initAutoHover from "./layouts/autoHover.js";
 
 export const main = {
   themeInfo: {
@@ -76,8 +77,12 @@ export const main = {
     }
 
     if (theme.articles.lazyload === true) {
-      initLazyLoad();
+      initLazyLoad({
+        preload: theme.articles.lazyload_preload === true
+      });
     }
+
+    initAutoHover();
   },
 };
 

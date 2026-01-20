@@ -270,12 +270,24 @@ function buildPreloaderDiv(src, dims, alt, originalClass) {
     classes.push(originalClass);
   }
 
+  // Determine shim style based on whether it's an image-exif image
+  const isImageExif = originalClass && originalClass.includes("image-exif-img");
+  const shimStyle = isImageExif
+    ? `width: 100%; height: auto; display: block; opacity: 0; pointer-events: none; max-height: 80svh;`
+    : `width: 100%; height: auto; display: block; opacity: 0; pointer-events: none;`;
+
+  // For image-exif, SVG needs explicit dimensions to work with max-height constraint
+  const svgAttrs = isImageExif
+    ? `width="${w}" height="${h}"`
+    : "";
+
   return `<div class="${classes.join(" ")}" ` +
     `data-src="${escapeHtmlAttr(src)}" ` +
     `data-width="${w}" ` +
     `data-height="${h}" ` +
     `data-alt="${escapeHtmlAttr(alt)}" ` +
-    `style="aspect-ratio: ${aspectRatio}; max-width: ${w}px;">` +
+    `style="aspect-ratio: ${aspectRatio}; max-width: 100%;">` +
+    `<svg viewBox="0 0 ${w} ${h}" ${svgAttrs} class="img-preloader-shim" style="${shimStyle}"></svg>` +
     `<div class="img-preloader-skeleton"></div>` +
     `</div>`;
 }
@@ -346,5 +358,5 @@ hexo.extend.filter.register(
 
     return data;
   },
-  1,
+  20,
 );
